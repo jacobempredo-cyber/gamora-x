@@ -33,6 +33,10 @@ app.use(cors({
 app.use(express.json());
 
 // Basic health check
+app.get('/', (req, res) => {
+  res.send('<h1>Gamora X Backend is LIVE! 🚀</h1><p>The API is up and running successfully.</p>');
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Gamora X Backend is running!' });
 });
