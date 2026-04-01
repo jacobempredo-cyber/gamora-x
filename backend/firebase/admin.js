@@ -6,6 +6,9 @@ require('dotenv').config();
 // Create a backend/.env file and add GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
 // Alternatively, parse the JSON from env string:
 
+let db;
+let auth;
+
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -24,11 +27,14 @@ try {
     });
     console.log('Firebase Admin initialized with projectId: gamora-x');
   }
+  
+  // Safely assign only if initialization passes
+  db = admin.firestore();
+  auth = admin.auth();
+  
 } catch (error) {
-  console.error("Firebase Admin initialization error:", error.message);
+  console.error("🔥 CRITICAL FIREBASE INIT ERROR:", error.message);
+  console.error("👉 Please ensure FIREBASE_SERVICE_ACCOUNT is a valid JSON string on Render.");
 }
-
-const db = admin.firestore();
-const auth = admin.auth();
 
 module.exports = { admin, db, auth };
