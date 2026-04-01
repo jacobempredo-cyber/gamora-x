@@ -1,0 +1,578 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
+import { doc, updateDoc, increment, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { Link } from 'react-router-dom';
+
+const SOLO_QUESTIONS = [
+  { id: 1, question: "Which planet is known as the red planet?", options: ["Venus", "Mars", "Jupiter", "Saturn"], answer: "Mars" },
+  { id: 2, question: "What is the capital of France?", options: ["Berlin", "London", "Paris", "Madrid"], answer: "Paris" },
+  { id: 3, question: "Who painted the Mona Lisa?", options: ["Vincent van Gogh", "Pablo Picasso", "Leonardo da Vinci", "Claude Monet"], answer: "Leonardo da Vinci" },
+  { id: 4, question: "What is the largest ocean on Earth?", options: ["Atlantic Ocean", "Indian Ocean", "Arctic Ocean", "Pacific Ocean"], answer: "Pacific Ocean" },
+  { id: 5, question: "What is the smallest prime number?", options: ["1", "2", "3", "5"], answer: "2" },
+  { id: 6, question: "Which element has the chemical symbol 'O'?", options: ["Gold", "Silver", "Oxygen", "Iron"], answer: "Oxygen" },
+  { id: 7, question: "Who is the protagonist in 'The Legend of Zelda'?", options: ["Zelda", "Link", "Ganon", "Tingle"], answer: "Link" },
+];
+
+export default function Quiz() {
+  const { currentUser, userProfile } = useAuth();
+  const { socket } = useSocket();
+
+  // Mode
+  const [mode, setMode] = useState(null); // null, 'solo', 'battle'
+  const [isMatchmaking, setIsMatchmaking] = useState(false);
+
+  // Solo state
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [showResult, setShowResult] = useState(false);
+  const [isGameOver, setIsGameOver] = useState(false);
+  const [feedback, setFeedback] = useState(null);
+
+  // Battle state
+  const [matchData, setMatchData] = useState(null);
+  const [battleQuestions, setBattleQuestions] = useState([]);
+  const [battleQuestionIndex, setBattleQuestionIndex] = useState(0);
+  const [battleScores, setBattleScores] = useState({});
+  const [battleOver, setBattleOver] = useState(false);
+  const [battleWinner, setBattleWinner] = useState(null);
+  const [myAnswer, setMyAnswer] = useState(null);
+  const [opponentAnswered, setOpponentAnswered] = useState(false);
+  const [roundResult, setRoundResult] = useState(null);
+  const [questionStartTime, setQuestionStartTime] = useState(0);
+  const [rematchRequested, setRematchRequested] = useState(false);
+  const [rematchFromOpponent, setRematchFromOpponent] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(15);
+  const timerRef = useRef(null);
+
+  // Socket listeners
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on('quiz_match_found', (data) => {
+      setIsMatchmaking(false);
+      setMatchData(data);
+      setBattleQuestions(data.questions);
+      setBattleQuestionIndex(0);
+      setBattleScores(data.scores);
+      setBattleOver(false);
+      setBattleWinner(null);
+      setMyAnswer(null);
+      setOpponentAnswered(false);
+      setRoundResult(null);
+      setRematchRequested(false);
+      setRematchFromOpponent(false);
+      setQuestionStartTime(Date.now());
+      setTimeLeft(15);
+      setMode('battle');
+      updateTaskProgress('play_any');
+    });
+
+    socket.on('quiz_opponent_answered', () => {
+      setOpponentAnswered(true);
+    });
+
+    socket.on('quiz_round_result', ({ questionIndex, correctAnswer, results, scores }) => {
+      setRoundResult({ questionIndex, correctAnswer, results });
+      setBattleScores(scores);
+
+      // Move to next question after showing result
+      setTimeout(() => {
+        setRoundResult(null);
+        setMyAnswer(null);
+        setOpponentAnswered(false);
+        setBattleQuestionIndex(prev => prev + 1);
+        setQuestionStartTime(Date.now());
+        setTimeLeft(15);
+      }, 3000);
+    });
+
+    socket.on('quiz_game_over', ({ scores, winnerUid }) => {
+      setBattleScores(scores);
+      setBattleOver(true);
+      setBattleWinner(winnerUid);
+
+      if (winnerUid === currentUser?.uid) {
+        giveMultiplayerRewards(true);
+      } else if (winnerUid) {
+        giveMultiplayerRewards(false);
+      }
+    });
+
+    socket.on('rematch_requested', ({ game }) => {
+      if (game === 'quiz') setRematchFromOpponent(true);
+    });
+
+    socket.on('waiting_for_opponent', () => {
+      setIsMatchmaking(true);
+    });
+
+    return () => {
+      socket.off('quiz_match_found');
+      socket.off('quiz_opponent_answered');
+      socket.off('quiz_round_result');
+      socket.off('quiz_game_over');
+      socket.off('rematch_requested');
+      socket.off('waiting_for_opponent');
+    };
+  }, [socket, currentUser]);
+
+  // Battle timer
+  useEffect(() => {
+    if (mode === 'battle' && !battleOver && !roundResult && matchData && battleQuestionIndex < battleQuestions.length) {
+      clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            // Auto-submit wrong answer on timeout
+            if (!myAnswer) {
+              submitBattleAnswer('__timeout__');
+            }
+            clearInterval(timerRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [mode, battleQuestionIndex, battleOver, roundResult, matchData]);
+
+  const giveMultiplayerRewards = async (isWin) => {
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const baseXp = isWin ? 500 : 150;
+      const baseCoins = isWin ? 50 : 10;
+      await updateDoc(userRef, {
+        score: increment(isWin ? 1000 : 300),
+        xp: increment(baseXp),
+        coins: increment(baseCoins),
+      });
+      const lbRef = doc(db, 'leaderboard', currentUser.uid);
+      await setDoc(lbRef, {
+        username: userProfile.username,
+        avatar: userProfile.avatar || '',
+        score: increment(isWin ? 1000 : 300),
+        updatedAt: new Date(),
+      }, { merge: true });
+      if (isWin) updateTaskProgress('win_battle');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // SOLO logic
+  const handleSoloAnswer = (option) => {
+    if (feedback) return;
+    const isCorrect = option === SOLO_QUESTIONS[currentQuestionIndex].answer;
+    if (isCorrect) { setScore(score + 1); setFeedback('correct'); }
+    else { setFeedback('wrong'); }
+
+    setTimeout(() => {
+      if (currentQuestionIndex + 1 < SOLO_QUESTIONS.length) {
+        setCurrentQuestionIndex(currentQuestionIndex + 1);
+        setFeedback(null);
+      } else {
+        endSoloGame();
+      }
+    }, 1000);
+  };
+
+  const endSoloGame = async () => {
+    setIsGameOver(true);
+    setShowResult(true);
+    if (currentUser) {
+      try {
+        const userRef = doc(db, 'users', currentUser.uid);
+        const earnedXp = score * 50;
+        const earnedCoins = score * 5;
+        await updateDoc(userRef, { score: increment(score * 100), xp: increment(earnedXp), coins: increment(earnedCoins) });
+        const lbRef = doc(db, 'leaderboard', currentUser.uid);
+        const lbSnap = await getDoc(lbRef);
+        if (lbSnap.exists()) {
+          await updateDoc(lbRef, { score: increment(score * 100), updatedAt: new Date() });
+        } else {
+          await setDoc(lbRef, { username: userProfile.username, avatar: userProfile.avatar || '', score: score * 100, updatedAt: new Date() });
+        }
+        updateTaskProgress('quiz_wiz');
+        updateTaskProgress('play_any');
+      } catch (error) { console.error("Error saving quiz score:", error); }
+    }
+  };
+
+  const resetSoloGame = () => {
+    setCurrentQuestionIndex(0);
+    setScore(0);
+    setIsGameOver(false);
+    setShowResult(false);
+    setFeedback(null);
+  };
+
+  // BATTLE logic
+  const joinQueue = () => {
+    if (!socket || !userProfile) return;
+    setIsMatchmaking(true);
+    socket.emit('join_quiz_queue', {
+      uid: currentUser.uid,
+      username: userProfile.username,
+      avatar: userProfile.avatar || '',
+    });
+  };
+
+  const cancelMatchmaking = () => {
+    socket.emit('leave_quiz_queue');
+    setIsMatchmaking(false);
+  };
+
+  const submitBattleAnswer = (answer) => {
+    if (myAnswer) return; // Already answered
+    const timeMs = Date.now() - questionStartTime;
+    setMyAnswer(answer);
+    clearInterval(timerRef.current);
+    socket.emit('quiz_submit_answer', {
+      roomId: matchData.roomId,
+      uid: currentUser.uid,
+      questionIndex: battleQuestionIndex,
+      answer,
+      timeMs,
+    });
+  };
+
+  const requestRematch = () => {
+    setRematchRequested(true);
+    socket.emit('request_rematch', { roomId: matchData.roomId, uid: currentUser.uid, game: 'quiz' });
+  };
+
+  const acceptRematch = () => {
+    socket.emit('accept_rematch', { roomId: matchData.roomId, game: 'quiz', players: matchData.players });
+  };
+
+  const updateTaskProgress = async (taskId) => {
+    try {
+      const idToken = await currentUser.getIdToken();
+      await fetch('/api/tasks/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ taskId }),
+      });
+    } catch (error) { console.error('Error updating task progress:', error); }
+  };
+
+  const opponentInfo = matchData?.players.find(p => p.uid !== currentUser?.uid);
+  const myBattleScore = battleScores[currentUser?.uid] || 0;
+  const opBattleScore = battleScores[opponentInfo?.uid] || 0;
+
+  // ==========================================
+  // RENDER: Mode Selection
+  // ==========================================
+  if (!mode) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
+        <Link to="/games" className="self-start text-cyan-400 hover:text-cyan-300 mb-8 flex items-center gap-2 transition-colors">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Library
+        </Link>
+        <div className="text-center mb-12">
+          <h1 className="text-5xl font-bold neon-text-cyan mb-2 tracking-wider">QUIZ MASTER</h1>
+          <p className="text-gray-400 text-lg">Test your knowledge</p>
+        </div>
+        <div className="glass-card w-full p-10 flex flex-col items-center justify-center min-h-[400px] border-cyan-500/20">
+          <div className="text-6xl mb-8">🎯</div>
+          <h2 className="text-2xl font-bold text-white mb-8">Select Your Mode</h2>
+          <div className="flex flex-wrap justify-center gap-6">
+            <button
+              onClick={() => { setMode('solo'); resetSoloGame(); }}
+              className="px-8 py-4 bg-gray-800 border-2 border-gray-600 rounded-xl text-white font-bold hover:border-cyan-400 hover:bg-cyan-400/10 transition-all w-48"
+            >
+              SOLO PRACTICE
+            </button>
+            <button
+              onClick={joinQueue}
+              className="px-8 py-4 bg-cyan-500 text-gray-900 rounded-xl font-bold hover:bg-cyan-400 transition-all w-48 shadow-[0_0_20px_rgba(6,182,212,0.4)]"
+            >
+              1v1 BATTLE
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER: Matchmaking
+  // ==========================================
+  if (isMatchmaking) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
+        <div className="text-center mb-12">
+          <h1 className="text-5xl font-bold neon-text-cyan mb-2 tracking-wider">QUIZ BATTLE</h1>
+          <p className="text-gray-400 text-lg">1v1 Speed & Knowledge</p>
+        </div>
+        <div className="glass-card w-full p-10 flex flex-col items-center justify-center min-h-[400px] border-cyan-500/20">
+          <div className="w-20 h-20 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-6"></div>
+          <h3 className="text-2xl font-bold text-white mb-2">Searching for Opponent...</h3>
+          <p className="text-gray-400 mb-8">Finding a quiz challenger</p>
+          <button onClick={cancelMatchmaking} className="text-red-400 hover:underline font-bold">CANCEL</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER: Battle Mode
+  // ==========================================
+  if (mode === 'battle' && matchData) {
+    // Battle game over
+    if (battleOver) {
+      return (
+        <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
+          <div className="text-center mb-8">
+            <h1 className="text-5xl font-bold neon-text-cyan mb-2">QUIZ BATTLE RESULTS</h1>
+          </div>
+          <div className="glass-card w-full p-10 flex flex-col items-center border-cyan-500/20 animate-fade-in-up">
+            <h2 className={`text-4xl font-black mb-6 ${battleWinner === currentUser.uid ? 'neon-text-blue' : battleWinner === null ? 'text-gray-400' : 'text-red-500'}`}>
+              {battleWinner === currentUser.uid ? '🎉 VICTORY!' : battleWinner === null ? '🤝 DRAW' : '💀 DEFEAT'}
+            </h2>
+
+            <div className="flex w-full justify-around items-center mb-8 max-w-md">
+              <div className="text-center">
+                <div className="text-xs text-gray-500 uppercase mb-1">You</div>
+                <div className="text-4xl font-black text-cyan-400">{myBattleScore}</div>
+                <div className="text-[10px] text-gray-500">POINTS</div>
+              </div>
+              <div className="text-xl font-black text-gray-700 italic">VS</div>
+              <div className="text-center">
+                <div className="text-xs text-gray-500 uppercase mb-1">{opponentInfo?.username}</div>
+                <div className="text-4xl font-black text-pink-400">{opBattleScore}</div>
+                <div className="text-[10px] text-gray-500">POINTS</div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900/50 rounded-lg p-6 mb-6 border border-gray-700 w-full max-w-sm">
+              <div className="text-sm text-gray-400 mb-4 uppercase tracking-widest text-center">Rewards (2x Multiplayer)</div>
+              <div className="flex justify-around">
+                <div className="text-center">
+                  <span className="text-purple-400 font-bold text-2xl block">+{battleWinner === currentUser.uid ? 500 : 150}</span>
+                  <span className="text-xs text-gray-500">XP</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-yellow-400 font-bold text-2xl block">+{battleWinner === currentUser.uid ? 50 : 10}</span>
+                  <span className="text-xs text-gray-500">COINS</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              {rematchFromOpponent ? (
+                <button onClick={acceptRematch} className="px-8 py-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-400 transition-all animate-pulse">
+                  ACCEPT REMATCH
+                </button>
+              ) : rematchRequested ? (
+                <button disabled className="px-8 py-3 bg-gray-700 text-gray-400 rounded-lg font-bold cursor-not-allowed">REMATCH SENT...</button>
+              ) : (
+                <button onClick={requestRematch} className="px-8 py-3 bg-cyan-500 text-gray-900 rounded-lg font-bold hover:bg-cyan-400 transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                  REMATCH
+                </button>
+              )}
+              <button onClick={() => { setMode(null); setMatchData(null); setBattleOver(false); }} className="px-8 py-3 border border-gray-600 text-gray-300 rounded-lg font-bold hover:border-white hover:text-white transition-all">
+                LEAVE
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Active battle question
+    const currentQ = battleQuestions[battleQuestionIndex];
+    if (!currentQ) return null;
+
+    return (
+      <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
+        <div className="text-center mb-4">
+          <h1 className="text-3xl font-bold neon-text-cyan mb-1">QUIZ BATTLE</h1>
+        </div>
+
+        {/* Score bar */}
+        <div className="flex w-full justify-between items-center mb-4 px-4 max-w-2xl bg-gray-900/40 p-3 rounded-xl border border-gray-700">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-cyan-900 flex items-center justify-center text-white text-xs font-bold">
+              {userProfile?.username?.charAt(0)}
+            </div>
+            <span className="font-bold text-white text-sm">{userProfile?.username}</span>
+            <span className="text-xl font-black text-cyan-400">{myBattleScore}</span>
+          </div>
+          <div className="text-sm font-black text-gray-600">VS</div>
+          <div className="flex items-center gap-3">
+            <span className="text-xl font-black text-pink-400">{opBattleScore}</span>
+            <span className="font-bold text-white text-sm">{opponentInfo?.username}</span>
+            <div className="w-8 h-8 rounded-full bg-pink-900 flex items-center justify-center text-white text-xs font-bold">
+              {opponentInfo?.username?.charAt(0)}
+            </div>
+          </div>
+        </div>
+
+        {/* Progress and Timer */}
+        <div className="flex items-center justify-between w-full max-w-2xl mb-6">
+          <span className="text-gray-400 text-sm">Q {battleQuestionIndex + 1} of {battleQuestions.length}</span>
+          <div className="h-1 flex-1 mx-4 bg-gray-700 rounded-full overflow-hidden">
+            <div className="h-full bg-cyan-400 transition-all duration-500" style={{ width: `${((battleQuestionIndex + 1) / battleQuestions.length) * 100}%` }}></div>
+          </div>
+          <div className={`text-xl font-black px-3 py-1 rounded-full border ${timeLeft <= 5 ? 'text-red-400 border-red-500/30 animate-pulse' : 'text-white border-gray-700'}`}>
+            {timeLeft}s
+          </div>
+        </div>
+
+        {/* Round Result Overlay */}
+        {roundResult ? (
+          <div className="glass-card w-full p-8 border-cyan-500/20 animate-fade-in-up text-center">
+            <div className="text-lg text-gray-400 mb-2">Correct Answer:</div>
+            <div className="text-2xl font-bold text-green-400 mb-6">{roundResult.correctAnswer}</div>
+            <div className="flex justify-around max-w-md mx-auto">
+              {matchData.players.map(p => {
+                const r = roundResult.results[p.uid];
+                return (
+                  <div key={p.uid} className="text-center">
+                    <div className="text-xs text-gray-500 mb-1">{p.uid === currentUser.uid ? 'You' : p.username}</div>
+                    <div className={`text-2xl font-black ${r.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                      {r.isCorrect ? '✓' : '✗'}
+                    </div>
+                    <div className="text-sm text-gray-400">{r.isCorrect ? `+${r.points}` : '+0'}</div>
+                    {r.isCorrect && <div className="text-[10px] text-gray-500">{r.timeMs}ms</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          /* Question Card */
+          <div className="glass-card w-full p-8 border-cyan-500/20">
+            {opponentAnswered && !myAnswer && (
+              <div className="absolute top-4 right-4 text-xs bg-pink-500/20 text-pink-400 px-3 py-1 rounded-full font-bold animate-pulse">
+                Opponent answered!
+              </div>
+            )}
+            <h2 className="text-2xl font-bold text-white mb-8 text-center leading-tight">{currentQ.question}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {currentQ.options.map((option, idx) => {
+                let btnClass = "p-5 rounded-xl border border-gray-700 text-left transition-all hover:border-cyan-400 hover:bg-cyan-400/10 group cursor-pointer";
+                if (myAnswer === option) btnClass = "p-5 rounded-xl border-2 border-cyan-400 bg-cyan-400/20 text-left";
+                else if (myAnswer) btnClass = "p-5 rounded-xl border border-gray-700 text-left opacity-50 cursor-not-allowed";
+
+                return (
+                  <button
+                    key={idx}
+                    disabled={!!myAnswer}
+                    onClick={() => submitBattleAnswer(option)}
+                    className={btnClass}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className="w-8 h-8 rounded-full border border-gray-600 flex items-center justify-center text-sm font-bold group-hover:border-cyan-400">
+                        {String.fromCharCode(65 + idx)}
+                      </span>
+                      <span className="text-xl font-medium text-gray-200">{option}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER: Solo Mode
+  // ==========================================
+  if (showResult) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
+        <Link to="/games" className="self-start text-cyan-400 hover:text-cyan-300 mb-8 flex items-center gap-2 transition-colors">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Arena
+        </Link>
+        <div className="glass-card w-full p-12 text-center border-purple-500/20">
+          <h1 className="text-5xl font-bold text-white mb-4">QUIZ COMPLETE!</h1>
+          <div className="text-7xl font-bold neon-text-purple mb-8">{score} / {SOLO_QUESTIONS.length}</div>
+          <div className="bg-gray-900/50 rounded-lg p-6 mb-8 border border-gray-700 w-full max-w-sm mx-auto">
+            <div className="text-sm text-gray-400 mb-4 uppercase tracking-widest">Rewards Earned</div>
+            <div className="flex justify-around">
+              <div>
+                <span className="text-purple-400 font-bold block text-2xl">+{score * 50}</span>
+                <span className="text-sm text-gray-500">XP</span>
+              </div>
+              <div>
+                <span className="text-yellow-400 font-bold block text-2xl">+{score * 5}</span>
+                <span className="text-sm text-gray-500">COINS</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-4 justify-center">
+            <button onClick={resetSoloGame} className="px-10 py-4 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-500 transition-all shadow-[0_0_20px_rgba(168,85,247,0.4)]">
+              PLAY AGAIN
+            </button>
+            <button onClick={() => setMode(null)} className="px-8 py-3 border border-gray-600 text-gray-300 rounded-lg font-bold hover:border-white transition-all">
+              BACK
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const currentQuestion = SOLO_QUESTIONS[currentQuestionIndex];
+
+  return (
+    <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
+      <Link to="/games" className="self-start text-cyan-400 hover:text-cyan-300 mb-8 flex items-center gap-2 transition-colors">
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+        Back to Arena
+      </Link>
+
+      <div className="text-center mb-12">
+        <h1 className="text-5xl font-bold neon-text-cyan mb-2 tracking-wider">QUIZ MASTER</h1>
+        <div className="flex items-center justify-center gap-4 text-gray-400">
+          <span>Question {currentQuestionIndex + 1} of {SOLO_QUESTIONS.length}</span>
+          <div className="h-1 w-32 bg-gray-700 rounded-full overflow-hidden">
+            <div className="h-full bg-cyan-400 transition-all duration-500" style={{ width: `${((currentQuestionIndex + 1) / SOLO_QUESTIONS.length) * 100}%` }}></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="glass-card w-full p-10 border-cyan-500/20">
+        <h2 className="text-3xl font-bold text-white mb-10 text-center leading-tight">{currentQuestion.question}</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {currentQuestion.options.map((option, idx) => {
+            const isCorrect = option === currentQuestion.answer;
+            let btnClass = "p-5 rounded-xl border border-gray-700 text-left transition-all hover:border-cyan-400 hover:bg-cyan-400/10 group";
+            if (feedback) {
+              if (isCorrect) btnClass = "p-5 rounded-xl border border-green-500 bg-green-500/20 text-left";
+              else if (!isCorrect && feedback === 'wrong') btnClass = "p-5 rounded-xl border border-red-500/50 bg-red-500/10 text-left opacity-60";
+            }
+            return (
+              <button key={idx} disabled={!!feedback} onClick={() => handleSoloAnswer(option)} className={btnClass}>
+                <div className="flex items-center gap-4">
+                  <span className="w-8 h-8 rounded-full border border-gray-600 flex items-center justify-center text-sm font-bold group-hover:border-cyan-400">
+                    {String.fromCharCode(65 + idx)}
+                  </span>
+                  <span className="text-xl font-medium text-gray-200">{option}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-8 text-center text-gray-500 font-mono">
+        Current Score: <span className="text-cyan-400 font-bold">{score}</span>
+      </div>
+    </div>
+  );
+}

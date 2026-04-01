@@ -1,0 +1,54 @@
+﻿[dotenv@17.3.1] injecting env (0) from .env -- tip: ΓÜÖ∩╕Å  enable debug logging with { debug: true }
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ΓÜÖ∩╕Å  load multiple .env files with { path: ['.env.local', '.env'] }
+Firebase Admin initialized with projectId: gamora-x
+node : CRITICAL: Uncaught 
+Exception! ≡ƒÜ¿
+At line:1 char:1
++ node server.js 2>&1 | 
+Out-File -FilePath 
+"server_error.log" 
+-Encoding ...
++ ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo        
+      : NotSpecified: (C  
+  RITICAL: Uncaught Exc   
+ eption! ≡ƒÜ¿:String)     
+[], RemoteException
+    + FullyQualifiedError 
+   Id : NativeCommandErr  
+  or
+ 
+Error: listen EADDRINUSE: 
+address already in use 
+:::5000
+    at 
+Server.setupListenHandle 
+[as _listen2] 
+(node:net:1940:16)
+    at listenInCluster 
+(node:net:1997:12)
+    at Server.listen 
+(node:net:2102:7)
+    at Object.<anonymous> 
+(C:\Users\Lenovo i5 8th 
+Gen\Documents\Gamora 
+x\backend\server.js:445:8)
+    at Module._compile (no
+de:internal/modules/cjs/lo
+ader:1730:14)
+    at Object..js (node:in
+ternal/modules/cjs/loader:
+1895:10)
+    at Module.load (node:i
+nternal/modules/cjs/loader
+:1465:32)
+    at Function._load (nod
+e:internal/modules/cjs/loa
+der:1282:12)
+    at 
+TracingChannel.traceSync (
+node:diagnostics_channel:3
+22:14)
+    at wrapModuleLoad (nod
+e:internal/modules/cjs/loa
+der:235:24)
