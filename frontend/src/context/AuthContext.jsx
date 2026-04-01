@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { auth, db } from '../firebase/config';
+import API_BASE_URL from '../config';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
@@ -121,7 +122,7 @@ export function AuthProvider({ children }) {
         const fetchProfile = async () => {
           try {
             const idToken = await user.getIdToken();
-            const response = await fetch(`/api/users/${user.uid}`, {
+            const response = await fetch(`${API_BASE_URL}/api/users/${user.uid}`, {
               headers: { Authorization: `Bearer ${idToken}` }
             });
             
@@ -195,6 +196,38 @@ export function AuthProvider({ children }) {
       if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
+
+  // Heartbeat system: Updates 'lastSeen' in Firestore every 30 seconds
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const heartbeat = async () => {
+      try {
+        const userRef = doc(db, 'users', currentUser.uid);
+        // Using updateDoc to avoid overwriting the entire profile
+        // We set isOnline to true as well in case they were marked offline by a timeout
+        await updateDoc(userRef, {
+          lastSeen: serverTimestamp(),
+          isOnline: true
+        });
+        console.debug('[AUTH] Heartbeat sent');
+      } catch (err) {
+        // Silently fail if network is intermittent, common on mobile
+        console.warn('[AUTH] Heartbeat failed:', err.message);
+      }
+    };
+
+    // Initial heartbeat immediately on login/refresh
+    heartbeat();
+
+    // Repeat every 30 seconds
+    const interval = setInterval(heartbeat, 30000);
+    
+    return () => {
+      clearInterval(interval);
+      // Optional: Mark offline on unmount/logout is already handled in logout()
+    };
+  }, [currentUser]);
 
   const value = useMemo(() => ({
     currentUser,

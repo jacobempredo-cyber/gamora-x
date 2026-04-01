@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import GameCard from '../components/GameCard';
+import API_BASE_URL from '../config';
 
 export default function Dashboard() {
   const { currentUser, userProfile } = useAuth();
@@ -18,7 +19,7 @@ export default function Dashboard() {
   const fetchTasks = async () => {
     try {
       const idToken = await currentUser.getIdToken();
-      const response = await fetch(`/api/tasks/${currentUser.uid}`, {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/${currentUser.uid}`, {
         headers: { Authorization: `Bearer ${idToken}` }
       });
       if (!response.ok) throw new Error('Failed to fetch');

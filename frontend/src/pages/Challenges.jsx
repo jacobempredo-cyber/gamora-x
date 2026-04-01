@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import API_BASE_URL from '../config';
 
 export default function Challenges() {
   const { currentUser } = useAuth();
@@ -15,7 +16,7 @@ export default function Challenges() {
     if (!currentUser) return;
     try {
       const idToken = await currentUser.getIdToken();
-      const response = await fetch(`/api/tasks/${currentUser.uid}`, {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/${currentUser.uid}`, {
         headers: { Authorization: `Bearer ${idToken}` }
       });
       const data = await response.json();
@@ -36,7 +37,7 @@ export default function Challenges() {
   const claimReward = async (taskId) => {
     try {
       const idToken = await currentUser.getIdToken();
-      const response = await fetch(`/api/tasks/claim/${taskId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/claim/${taskId}`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

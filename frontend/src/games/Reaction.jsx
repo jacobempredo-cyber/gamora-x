@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import API_BASE_URL from '../config';
 import { useSocket } from '../context/SocketContext';
 import { doc, updateDoc, increment, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -235,7 +236,7 @@ export default function Reaction() {
   const updateTaskProgress = async (taskId) => {
     try {
       const idToken = await currentUser.getIdToken();
-      await fetch('/api/tasks/progress', {
+      await fetch(`${API_BASE_URL}/api/tasks/progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ taskId }),

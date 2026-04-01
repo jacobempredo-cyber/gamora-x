@@ -4,7 +4,7 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
-const { db } = require('./firebase/admin');
+const { admin, db } = require('./firebase/admin');
 const { verifyToken } = require('./middleware/authMiddleware');
 
 const app = express();
@@ -865,15 +865,50 @@ io.on('connection', (socket) => {
     quizQueue = quizQueue.filter(p => p.socketId !== socket.id);
     reactionQueue = reactionQueue.filter(p => p.socketId !== socket.id);
     
-    // Broadcast updated online count and queue counts
-    io.emit('online_count', io.engine.clientsCount);
+    // Trigger online count update
+    updateOnlineCount();
     broadcastQueueCounts();
   });
 
   // Broadcast initial online count and queue counts
-  io.emit('online_count', io.engine.clientsCount);
+  updateOnlineCount();
   broadcastQueueCounts();
 });
+
+// Presence System: Calculate online count based on Firestore lastSeen
+async function updateOnlineCount() {
+  try {
+    let firestoreCount = 0;
+    
+    // Safety check for DB initialization
+    if (db) {
+      // A user is considered online if seen in the last 60 seconds
+      const oneMinuteAgo = new Date(Date.now() - 60000);
+      
+      const onlineSnap = await db.collection('users')
+        .where('lastSeen', '>', oneMinuteAgo)
+        .count()
+        .get();
+      
+      firestoreCount = onlineSnap.data().count;
+    }
+    
+    // HYBRID FALLBACK: 
+    // Use the higher of: Firestore 'lastSeen' count OR actual active Socket connections.
+    // This fixes the '0 online' issue if Firestore indexes/queries are failing.
+    const socketCount = io.engine.clientsCount || 0;
+    const finalCount = Math.max(firestoreCount, socketCount);
+
+    io.emit('online_count', finalCount);
+  } catch (error) {
+    console.error('[PRESENCE] Error updating online count:', error);
+    // CRITICAL FALLBACK: Always emit at least the raw socket count if logic fails
+    io.emit('online_count', io.engine.clientsCount || 0);
+  }
+}
+
+// Periodic update every 20 seconds
+setInterval(updateOnlineCount, 20000);
 
 // Reaction Battle: Server-controlled round start (ensures fairness)
 function startReactionRound(roomId) {

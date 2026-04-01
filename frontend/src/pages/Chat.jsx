@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { format } from 'date-fns';
+import API_BASE_URL from '../config';
 
 export default function Chat() {
   const { currentUser, userProfile } = useAuth();
@@ -63,7 +64,7 @@ export default function Chat() {
   const updateTaskProgress = async (taskId) => {
     try {
       const idToken = await currentUser.getIdToken();
-      await fetch('/api/tasks/progress', {
+      await fetch(`${API_BASE_URL}/api/tasks/progress`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

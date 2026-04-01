@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import API_BASE_URL from '../config';
 
 const SocketContext = createContext();
 
@@ -12,7 +13,7 @@ export function SocketProvider({ children }) {
 
   useEffect(() => {
     if (currentUser) {
-      const newSocket = io({
+      const newSocket = io(API_BASE_URL, {
         reconnectionAttempts: 5,
         timeout: 10000,
       });

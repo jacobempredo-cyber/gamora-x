@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import API_BASE_URL from '../config';
 import { useSocket } from '../context/SocketContext';
 import { Link } from 'react-router-dom';
 import { doc, updateDoc, increment } from 'firebase/firestore';
@@ -107,7 +108,7 @@ export default function TicTacToe() {
   const updateTaskProgress = async (taskId) => {
     try {
       const idToken = await currentUser.getIdToken();
-      await fetch('/api/tasks/progress', {
+      await fetch(`${API_BASE_URL}/api/tasks/progress`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

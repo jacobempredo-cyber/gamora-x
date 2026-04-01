@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import API_BASE_URL from '../config';
 import bgImage from '../assets/background.png';
 import xEmblem from '../assets/gamora_x_emblem.png';
 import logo from '../assets/logo.png.png';
@@ -110,7 +111,7 @@ export default function Landing() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const response = await fetch('http://localhost:5000/api/stats');
+        const response = await fetch(`${API_BASE_URL}/api/stats`);
         if (response.ok) {
           const data = await response.json();
           setTrueUsers(data.users || 0);
