@@ -57,12 +57,12 @@ export default function Social() {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // 3. Fetch Friends List
+  // 3. Fetch Friends List (Reactive Status)
   useEffect(() => {
     if (!currentUser) return;
     const q = collection(db, 'users', currentUser.uid, 'friends');
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const friendIds = [];
       snapshot.forEach(doc => friendIds.push(doc.id));
 
@@ -71,15 +71,26 @@ export default function Social() {
         return;
       }
 
-      // Fetch friend profiles to get online status
-      const friendProfiles = [];
-      for (const fId of friendIds) {
-        const fSnap = await getDoc(doc(db, 'users', fId));
-        if (fSnap.exists()) {
-          friendProfiles.push({ id: fSnap.id, ...fSnap.data() });
-        }
-      }
-      setFriends(friendProfiles);
+      // Instead of one-time getDoc, we listen to all friend profiles in real-time
+      // Note: Firestore 'in' query supports up to 30 IDs per query.
+      const profilesQuery = query(
+        collection(db, 'users'),
+        where('uid', 'in', friendIds.slice(0, 30))
+      );
+
+      const unsubProfiles = onSnapshot(profilesQuery, (pSnapshot) => {
+        const friendProfiles = [];
+        pSnapshot.forEach(doc => {
+          friendProfiles.push({ id: doc.id, ...doc.data() });
+        });
+        // Sort by online status first, then username
+        setFriends(friendProfiles.sort((a, b) => {
+          if (a.isOnline === b.isOnline) return a.username.localeCompare(b.username);
+          return a.isOnline ? -1 : 1;
+        }));
+      }, (err) => console.error("Error listening to friend profiles:", err));
+
+      return () => unsubProfiles();
     });
 
     return () => unsubscribe();
@@ -265,12 +276,18 @@ export default function Social() {
                         <div className="text-[10px] text-purple-400 font-bold uppercase">Rank: Novice • Level {user.level}</div>
                       </div>
                     </div>
-                    <button 
-                      onClick={() => handleAddFriend(user)}
-                      className="bg-cyan-500/10 text-cyan-400 border border-cyan-400/30 px-3 py-1 rounded text-xs font-black hover:bg-cyan-400 hover:text-black transition-all"
-                    >
-                      BEFRIEND +
-                    </button>
+                    {friends.some(f => f.id === user.id) ? (
+                      <span className="text-yellow-500 font-black text-[10px] uppercase border border-yellow-500/30 px-3 py-1 rounded bg-yellow-500/5">
+                        MY CREW
+                      </span>
+                    ) : (
+                      <button 
+                        onClick={() => handleAddFriend(user)}
+                        className="bg-cyan-500/10 text-cyan-400 border border-cyan-400/30 px-3 py-1 rounded text-xs font-black hover:bg-cyan-400 hover:text-black transition-all"
+                      >
+                        BEFRIEND +
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

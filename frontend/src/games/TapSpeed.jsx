@@ -4,11 +4,13 @@ import API_BASE_URL from '../config';
 import { useSocket } from '../context/SocketContext';
 import { doc, updateDoc, increment, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 export default function TapSpeed() {
   const { currentUser, userProfile } = useAuth();
   const { socket } = useSocket();
+  const [searchParams] = useSearchParams();
+  const gameModeParam = searchParams.get('mode'); // 'solo' or 'battle'
 
   // Mode: 'solo' or 'battle'
   const [mode, setMode] = useState(null); 
@@ -23,16 +25,21 @@ export default function TapSpeed() {
   const [highScore, setHighScore] = useState(0);
 
   const timerRef = useRef(null);
+  const scoreRef = useRef(0); // tracks real-time score to avoid stale closures in endGame
 
   // Socket Listeners
   useEffect(() => {
     if (!socket) return;
 
+    socket.on('waiting_for_opponent', () => {
+      setIsMatchmaking(true);
+    });
+
     socket.on('tap_match_found', (data) => {
       setIsMatchmaking(false);
       setMatchData(data);
       setMode('battle');
-      startBattle();
+      // startBattle() is triggered via useEffect watching matchData
     });
 
     socket.on('opponent_tapped', ({ uid }) => {
@@ -46,11 +53,14 @@ export default function TapSpeed() {
     });
 
     return () => {
+      socket.off('waiting_for_opponent');
       socket.off('tap_match_found');
       socket.off('opponent_tapped');
       socket.off('player_finished');
     };
   }, [socket, currentUser]);
+
+
 
   // Timer Logic
   useEffect(() => {
@@ -65,6 +75,7 @@ export default function TapSpeed() {
   }, [isPlaying, timeLeft]);
 
   const startSolo = () => {
+    scoreRef.current = 0;
     setMode('solo');
     setScore(0);
     setTimeLeft(10);
@@ -73,6 +84,7 @@ export default function TapSpeed() {
   };
 
   const startBattle = () => {
+    scoreRef.current = 0;
     setScore(0);
     setOpponentScore(0);
     setTimeLeft(10);
@@ -80,13 +92,26 @@ export default function TapSpeed() {
     setIsGameOver(false);
   };
 
+  // Start battle automatically when matchData arrives
+  useEffect(() => {
+    if (matchData && mode === 'battle') {
+      startBattle();
+    }
+  }, [matchData]);
+
   const joinQueue = () => {
-    if (!socket || !userProfile) return;
+    if (!socket) {
+      alert("Connecting to game server... Please wait a moment.");
+      return;
+    }
+    
+    const diff = difficultyParam || 'medium';
     setIsMatchmaking(true);
     socket.emit('join_tap_queue', {
       uid: currentUser.uid,
-      username: userProfile.username,
-      avatar: userProfile.avatar
+      username: userProfile?.username || currentUser.displayName || currentUser.email.split('@')[0],
+      avatar: userProfile?.avatar || currentUser.photoURL || '',
+      difficulty: diff
     });
   };
 
@@ -97,8 +122,8 @@ export default function TapSpeed() {
 
   const handleTap = () => {
     if (isPlaying && timeLeft > 0) {
-      const newScore = score + 1;
-      setScore(newScore);
+      scoreRef.current += 1;
+      setScore(scoreRef.current);
       
       if (mode === 'battle' && matchData) {
         socket.emit('tap_press', { roomId: matchData.roomId, uid: currentUser.uid });
@@ -111,41 +136,35 @@ export default function TapSpeed() {
     setIsGameOver(true);
     clearInterval(timerRef.current);
 
+    const finalScore = scoreRef.current; // use ref to avoid stale closure
+
     if (mode === 'battle' && matchData) {
       socket.emit('tap_game_over', { 
         roomId: matchData.roomId, 
-        finalScore: score, 
+        finalScore,
         uid: currentUser.uid 
       });
     }
 
-    if (score > highScore) setHighScore(score);
+    if (finalScore > highScore) setHighScore(finalScore);
     
     if (currentUser) {
       try {
         const userRef = doc(db, 'users', currentUser.uid);
-        
-        // Multiplayer Win Logic
-        let isWin = false;
-        if (mode === 'battle') {
-           isWin = score > opponentScore;
-        }
-
-        const earnedXp = isWin ? score * 2 : score;
-        const earnedCoins = isWin ? Math.floor(score / 5) : Math.floor(score / 10);
+        const earnedXp = finalScore;
+        const earnedCoins = Math.floor(finalScore / 10);
         
         await updateDoc(userRef, {
-          score: increment(isWin ? score * 2 : score),
+          score: increment(finalScore),
           xp: increment(earnedXp),
           coins: increment(earnedCoins)
         });
         
-        // Update Leaderboard
         const lbRef = doc(db, 'leaderboard', currentUser.uid);
         await setDoc(lbRef, {
           username: userProfile.username,
           avatar: userProfile.avatar || '',
-          score: increment(isWin ? score * 2 : score),
+          score: increment(finalScore),
           updatedAt: new Date()
         }, { merge: true });
         
@@ -197,18 +216,22 @@ export default function TapSpeed() {
             <div className="text-6xl mb-4">⚡</div>
             <h2 className="text-2xl font-bold text-white mb-4">Select Your Mode</h2>
             <div className="flex flex-wrap justify-center gap-6">
-              <button 
-                onClick={startSolo}
-                className="px-8 py-4 bg-gray-800 border-2 border-gray-600 rounded-xl text-white font-bold hover:border-yellow-400 hover:bg-yellow-400/10 transition-all w-48"
-              >
-                SOLO PRACTICE
-              </button>
-              <button 
-                onClick={joinQueue}
-                className="px-8 py-4 bg-yellow-500 text-gray-900 rounded-xl font-bold hover:bg-yellow-400 transition-all w-48 shadow-[0_0_20px_rgba(234,179,8,0.4)]"
-              >
-                1v1 BATTLE
-              </button>
+              {(!gameModeParam || gameModeParam === 'solo') && (
+                <button 
+                  onClick={startSolo}
+                  className="px-8 py-4 bg-gray-800 border-2 border-gray-600 rounded-xl text-white font-bold hover:border-yellow-400 hover:bg-yellow-400/10 transition-all w-48"
+                >
+                  SOLO PRACTICE
+                </button>
+              )}
+              {(!gameModeParam || gameModeParam === 'battle') && (
+                <button 
+                  onClick={joinQueue}
+                  className="px-8 py-4 bg-yellow-500 text-gray-900 rounded-xl font-bold hover:bg-yellow-400 transition-all w-48 shadow-[0_0_20px_rgba(234,179,8,0.4)]"
+                >
+                  1v1 BATTLE
+                </button>
+              )}
             </div>
           </div>
         )}

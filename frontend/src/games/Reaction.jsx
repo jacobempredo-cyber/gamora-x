@@ -4,11 +4,13 @@ import API_BASE_URL from '../config';
 import { useSocket } from '../context/SocketContext';
 import { doc, updateDoc, increment, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 export default function Reaction() {
   const { currentUser, userProfile } = useAuth();
   const { socket } = useSocket();
+  const [searchParams] = useSearchParams();
+  const gameModeParam = searchParams.get('mode'); // 'solo' or 'battle'
 
   // Mode
   const [mode, setMode] = useState(null); // null, 'solo', 'battle'
@@ -110,6 +112,8 @@ export default function Reaction() {
     };
   }, [socket, currentUser]);
 
+
+
   const giveMultiplayerRewards = async (isWin) => {
     try {
       const userRef = doc(db, 'users', currentUser.uid);
@@ -186,12 +190,18 @@ export default function Reaction() {
 
   // BATTLE LOGIC
   const joinQueue = () => {
-    if (!socket || !userProfile) return;
+    if (!socket) {
+      alert("Connecting to game server... Please wait a moment.");
+      return;
+    }
+    
+    const diff = difficultyParam || 'medium';
     setIsMatchmaking(true);
     socket.emit('join_reaction_queue', {
       uid: currentUser.uid,
-      username: userProfile.username,
-      avatar: userProfile.avatar || '',
+      username: userProfile?.username || currentUser.displayName || currentUser.email.split('@')[0],
+      avatar: userProfile?.avatar || currentUser.photoURL || '',
+      difficulty: diff
     });
   };
 
@@ -249,6 +259,26 @@ export default function Reaction() {
   const opWins = roundWins[opponentInfo?.uid] || 0;
 
   // ==========================================
+  // RENDER: Matchmaking
+  // ==========================================
+  if (isMatchmaking) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
+        <div className="text-center mb-12">
+          <h1 className="text-5xl font-bold neon-text-pink mb-2 tracking-wider">REACTION DUEL</h1>
+          <p className="text-gray-400 text-lg">Best of 5 Rounds</p>
+        </div>
+        <div className="glass-card w-full p-10 flex flex-col items-center justify-center min-h-[400px] border-pink-500/20">
+          <div className="w-20 h-20 border-4 border-pink-500/20 border-t-pink-500 rounded-full animate-spin mb-6"></div>
+          <h3 className="text-2xl font-bold text-white mb-2">Searching for Opponent...</h3>
+          <p className="text-gray-400 mb-8">Finding a challenger with fast reflexes</p>
+          <button onClick={cancelMatchmaking} className="text-red-400 hover:underline font-bold">CANCEL</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
   // RENDER: Mode Selection
   // ==========================================
   if (!mode) {
@@ -268,39 +298,23 @@ export default function Reaction() {
           <div className="text-6xl mb-8">🚦</div>
           <h2 className="text-2xl font-bold text-white mb-8">Select Your Mode</h2>
           <div className="flex flex-wrap justify-center gap-6">
-            <button
-              onClick={() => setMode('solo')}
-              className="px-8 py-4 bg-gray-800 border-2 border-gray-600 rounded-xl text-white font-bold hover:border-pink-400 hover:bg-pink-400/10 transition-all w-48"
-            >
-              SOLO PRACTICE
-            </button>
-            <button
-              onClick={joinQueue}
-              className="px-8 py-4 bg-pink-500 text-white rounded-xl font-bold hover:bg-pink-400 transition-all w-48 shadow-[0_0_20px_rgba(236,72,153,0.4)]"
-            >
-              1v1 BATTLE
-            </button>
+            {(!gameModeParam || gameModeParam === 'solo') && (
+              <button
+                onClick={() => setMode('solo')}
+                className="px-8 py-4 bg-gray-800 border-2 border-gray-600 rounded-xl text-white font-bold hover:border-pink-400 hover:bg-pink-400/10 transition-all w-48"
+              >
+                SOLO PRACTICE
+              </button>
+            )}
+            {(!gameModeParam || gameModeParam === 'battle') && (
+              <button
+                onClick={joinQueue}
+                className="px-8 py-4 bg-pink-500 text-white rounded-xl font-bold hover:bg-pink-400 transition-all w-48 shadow-[0_0_20px_rgba(236,72,153,0.4)]"
+              >
+                1v1 BATTLE
+              </button>
+            )}
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ==========================================
-  // RENDER: Matchmaking
-  // ==========================================
-  if (isMatchmaking) {
-    return (
-      <div className="p-8 max-w-4xl mx-auto flex flex-col items-center">
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold neon-text-pink mb-2 tracking-wider">REACTION DUEL</h1>
-          <p className="text-gray-400 text-lg">Best of 5 Rounds</p>
-        </div>
-        <div className="glass-card w-full p-10 flex flex-col items-center justify-center min-h-[400px] border-pink-500/20">
-          <div className="w-20 h-20 border-4 border-pink-500/20 border-t-pink-500 rounded-full animate-spin mb-6"></div>
-          <h3 className="text-2xl font-bold text-white mb-2">Searching for Opponent...</h3>
-          <p className="text-gray-400 mb-8">Finding a challenger with fast reflexes</p>
-          <button onClick={cancelMatchmaking} className="text-red-400 hover:underline font-bold">CANCEL</button>
         </div>
       </div>
     );

@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import API_BASE_URL from '../config';
 import { useSocket } from '../context/SocketContext';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { doc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 export default function TicTacToe() {
   const { currentUser, userProfile } = useAuth();
   const { socket } = useSocket();
+  const [searchParams] = useSearchParams();
+  const gameModeParam = searchParams.get('mode'); // 'solo' or 'battle'
 
   const [gameState, setGameState] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -123,11 +125,14 @@ export default function TicTacToe() {
 
   const findMatch = () => {
     if (!socket || !currentUser || !userProfile) return;
+    const diff = difficultyParam || 'medium';
+    setIsSearching(true);
     socket.emit('join_queue', {
       uid: currentUser.uid,
       username: userProfile.username,
       avatar: userProfile.avatar,
-      level: userProfile.level
+      level: userProfile.level,
+      difficulty: diff
     });
   };
 
@@ -184,13 +189,28 @@ export default function TicTacToe() {
             ) : (
               <div className="text-center animate-fade-in-up">
                 <div className="text-6xl mb-6">⚔️</div>
-                <h2 className="text-3xl font-bold text-white mb-8">Ready to Battle?</h2>
-                <button 
-                  onClick={findMatch}
-                  className="px-10 py-4 bg-purple-600 text-white rounded-lg text-2xl font-bold hover:bg-purple-500 transition-all shadow-[0_0_20px_rgba(176,38,255,0.4)] hover:shadow-[0_0_30px_rgba(176,38,255,0.7)]"
-                >
-                  FIND MATCH
-                </button>
+                {(!gameModeParam || gameModeParam === 'battle') ? (
+                  <>
+                    <h2 className="text-3xl font-bold text-white mb-8">Ready to Battle?</h2>
+                    <button 
+                      onClick={findMatch}
+                      className="px-10 py-4 bg-purple-600 text-white rounded-lg text-2xl font-bold hover:bg-purple-500 transition-all shadow-[0_0_20px_rgba(176,38,255,0.4)] hover:shadow-[0_0_30px_rgba(176,38,255,0.7)]"
+                    >
+                      FIND MATCH
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-bold text-white mb-4">Solo Mode Coming Soon</h2>
+                    <p className="text-gray-400 mb-8">Tic Tac Toe is currently 1v1 only.</p>
+                    <Link 
+                      to="/multiplayer" 
+                      className="px-8 py-3 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-500 transition-all"
+                    >
+                      GO TO MULTIPLAYER HUB
+                    </Link>
+                  </>
+                )}
               </div>
             )}
           </div>

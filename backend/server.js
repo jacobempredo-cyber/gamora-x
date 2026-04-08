@@ -11,7 +11,9 @@ const app = express();
 const server = http.createServer(app);
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://localhost:5174",
   "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -25,6 +27,18 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 5000;
 
+// Database Readiness Middleware
+const checkDb = (req, res, next) => {
+  if (!db) {
+    console.error(`[DB ERROR] Firebase not initialized. Request blocked: ${req.method} ${req.url}`);
+    return res.status(503).json({ 
+      error: 'Backend Service Unavailable', 
+      details: 'Firebase Admin SDK is not properly configured. Check backend/.env'
+    });
+  }
+  next();
+};
+
 // Middleware
 app.use(cors({
   origin: allowedOrigins,
@@ -32,30 +46,21 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Basic health check
+// Public routes (no DB needed)
 app.get('/', (req, res) => {
   res.send('<h1>Gamora X Backend is LIVE! 🚀</h1><p>The API is up and running successfully.</p>');
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Gamora X Backend is running!' });
-});
-
-// Global Platform Stats (Publicly Accessible)
-app.get('/api/stats', async (req, res) => {
-  try {
-    const usersSnap = await db.collection('users').count().get();
-    const matchesSnap = await db.collection('matches').count().get();
-    res.json({ users: usersSnap.data().count, matches: matchesSnap.data().count });
-  } catch (error) {
-    console.error('Error fetching global stats:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  res.json({ status: 'OK', message: 'Gamora X Backend is running!', firebase: !!db });
 });
 
 // ==========================================
-// USER ROUTES
+// PROTECTED API ROUTES
 // ==========================================
+app.use('/api', checkDb);
+
+// GET user profile
 
 // GET user profile
 app.get('/api/users/:uid', verifyToken, async (req, res) => {
@@ -294,6 +299,10 @@ let reactionQueue = []; // Queue for 1v1 Reaction Battle
 let parties = {}; // { partyId: { players: [], hostId } }
 let activeMatches = {}; // { roomId: matchState } for server-controlled games
 
+// Online presence tracking: socketId -> uid
+// This is the ground truth for who is currently connected.
+const connectedUsers = new Map();
+
 function generatePartyId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
@@ -346,67 +355,123 @@ const QUIZ_BATTLE_QUESTIONS = [
   { id: 10, question: "What is the hardest natural substance?", options: ["Gold", "Iron", "Diamond", "Titanium"], answer: "Diamond" },
 ];
 
-function selectQuizQuestions(count = 5) {
-  const shuffled = [...QUIZ_BATTLE_QUESTIONS].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, count);
+async function selectQuizQuestions(count = 5, difficulty = 'medium') {
+  try {
+    const snapshot = await db.collection('quizzes').where('difficulty', '==', difficulty.toLowerCase()).get();
+    if (snapshot.empty) throw new Error(`No ${difficulty} quizzes found in database`);
+    const questions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return questions.sort(() => 0.5 - Math.random()).slice(0, count);
+  } catch (error) {
+    console.error(`[QUIZ] Failed to fetch ${difficulty} questions from Firestore, using fallback:`, error.message);
+    const shuffled = [...QUIZ_BATTLE_QUESTIONS].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+  }
 }
 
 io.on('connection', (socket) => {
   console.log('Socket connected:', socket.id);
 
+  // Client emits this right after connecting so we know who they are
+  socket.on('user_connected', async (uid) => {
+    if (uid) {
+      connectedUsers.set(socket.id, uid);
+      console.log(`[PRESENCE] User ${uid} registered (socket ${socket.id}). Online: ${new Set(connectedUsers.values()).size}`);
+      
+      // Update Firestore: User is now online
+      try {
+        await db.collection('users').doc(uid).update({ 
+          isOnline: true, 
+          lastSeen: admin.firestore.FieldValue.serverTimestamp() 
+        });
+      } catch (err) {
+        console.error(`[PRESENCE] Error updating isOnline for user ${uid}:`, err.message);
+      }
+
+      // Broadcast updated count to ALL sockets (including this one)
+      broadcastOnlineCount();
+      // Also send the current queue state to this new socket
+      socket.emit('queue_counts', {
+        ttt: waitingPlayers.length,
+        tap: tapQueue.length,
+        memory: memoryQueue.length,
+        quiz: quizQueue.length,
+        reaction: reactionQueue.length,
+      });
+    }
+  });
+
+
   // ==========================================
   // TIC TAC TOE MATCHMAKING
   // ==========================================
   socket.on('join_queue', (userData) => {
-    // ... logic for Tic Tac Toe matches ...
+    const difficulty = userData.difficulty || 'medium';
     if (waitingPlayers.find(p => p.uid === userData.uid)) return;
-    if (waitingPlayers.length > 0) {
-      const opponent = waitingPlayers.pop();
+    
+    // Find opponent with SAME difficulty
+    let opponentIndex = -1;
+    for (let i = 0; i < waitingPlayers.length; i++) {
+      if (waitingPlayers[i].difficulty === difficulty && io.sockets.sockets.get(waitingPlayers[i].socketId)) {
+        opponentIndex = i;
+        break;
+      }
+    }
+    
+    if (opponentIndex > -1) {
+      const opponent = waitingPlayers.splice(opponentIndex, 1)[0];
       const roomId = `match_ttt_${Date.now()}`;
       socket.join(roomId);
       const opponentSocket = io.sockets.sockets.get(opponent.socketId);
-      if (opponentSocket) opponentSocket.join(roomId);
+      opponentSocket.join(roomId);
       io.to(roomId).emit('match_found', {
         roomId,
-        players: [opponent, { ...userData, socketId: socket.id }],
+        players: [opponent, { ...userData, socketId: socket.id, difficulty }],
         board: Array(9).fill(null),
         turn: opponent.uid,
         winner: null,
       });
     } else {
-      waitingPlayers.push({ ...userData, socketId: socket.id });
+      waitingPlayers.push({ ...userData, socketId: socket.id, difficulty });
       socket.emit('waiting_for_opponent');
     }
+    broadcastQueueCounts();
   });
 
   // ==========================================
   // TAP SPEED MATCHMAKING (1v1)
   // ==========================================
   socket.on('join_tap_queue', (userData) => {
-    console.log(`${userData.username} joined Tap Queue.`);
+    const difficulty = userData.difficulty || 'medium';
+    console.log(`${userData.username} joined Tap Queue (${difficulty}).`);
     if (tapQueue.find(p => p.uid === userData.uid)) return;
 
-    if (tapQueue.length > 0) {
-      const opponent = tapQueue.pop();
-      const roomId = `match_tap_${Date.now()}`;
-      
-      socket.join(roomId);
-      const opponentSocket = io.sockets.sockets.get(opponent.socketId);
-      if (opponentSocket) opponentSocket.join(roomId);
+    let opponentIndex = -1;
+    for (let i = 0; i < tapQueue.length; i++) {
+      if (tapQueue[i].difficulty === difficulty && io.sockets.sockets.get(tapQueue[i].socketId)) {
+        opponentIndex = i;
+        break;
+      }
+    }
 
+    if (opponentIndex > -1) {
+      const opponent = tapQueue.splice(opponentIndex, 1)[0];
+      const roomId = `match_tap_${Date.now()}`;
+      socket.join(roomId);
+      io.sockets.sockets.get(opponent.socketId).join(roomId);
       const gameState = {
         roomId,
-        players: [opponent, { ...userData, socketId: socket.id }],
+        players: [opponent, { ...userData, socketId: socket.id, difficulty }],
         timeLeft: 10,
         scores: { [opponent.uid]: 0, [userData.uid]: 0 },
-        isStarted: false
+        isStarted: false,
+        difficulty
       };
-
       io.to(roomId).emit('tap_match_found', gameState);
     } else {
-      tapQueue.push({ ...userData, socketId: socket.id });
+      tapQueue.push({ ...userData, socketId: socket.id, difficulty });
       socket.emit('waiting_for_opponent');
     }
+    broadcastQueueCounts();
   });
 
   socket.on('tap_press', ({ roomId, uid }) => {
@@ -504,36 +569,41 @@ io.on('connection', (socket) => {
   // MEMORY MATCH BATTLE (1v1)
   // ==========================================
   socket.on('join_memory_queue', (userData) => {
-    console.log(`${userData.username} joined Memory Queue.`);
+    const difficulty = userData.difficulty || 'medium';
+    console.log(`${userData.username} joined Memory Queue (${difficulty}).`);
     if (memoryQueue.find(p => p.uid === userData.uid)) return;
 
-    if (memoryQueue.length > 0) {
-      const opponent = memoryQueue.pop();
-      const roomId = `match_mem_${Date.now()}`;
-      
-      socket.join(roomId);
-      const opponentSocket = io.sockets.sockets.get(opponent.socketId);
-      if (opponentSocket) opponentSocket.join(roomId);
+    let opponentIndex = -1;
+    for (let i = 0; i < memoryQueue.length; i++) {
+      if (memoryQueue[i].difficulty === difficulty && io.sockets.sockets.get(memoryQueue[i].socketId)) {
+        opponentIndex = i;
+        break;
+      }
+    }
 
+    if (opponentIndex > -1) {
+      const opponent = memoryQueue.splice(opponentIndex, 1)[0];
+      const roomId = `match_mem_${Date.now()}`;
+      socket.join(roomId);
+      io.sockets.sockets.get(opponent.socketId).join(roomId);
       const deck = generateMemoryDeck();
       const gameState = {
         roomId,
         game: 'memory',
-        players: [opponent, { ...userData, socketId: socket.id }],
+        players: [opponent, { ...userData, socketId: socket.id, difficulty }],
         deck,
         scores: { [opponent.uid]: 0, [userData.uid]: 0 },
         totalPairs: MEMORY_ICONS.length,
         pairsFound: 0,
+        difficulty
       };
       activeMatches[roomId] = gameState;
-
       io.to(roomId).emit('memory_match_found', gameState);
-      broadcastQueueCounts();
     } else {
-      memoryQueue.push({ ...userData, socketId: socket.id });
+      memoryQueue.push({ ...userData, socketId: socket.id, difficulty });
       socket.emit('waiting_for_opponent');
-      broadcastQueueCounts();
     }
+    broadcastQueueCounts();
   });
 
   socket.on('leave_memory_queue', () => {
@@ -580,38 +650,43 @@ io.on('connection', (socket) => {
   // ==========================================
   // QUIZ BATTLE (1v1)
   // ==========================================
-  socket.on('join_quiz_queue', (userData) => {
-    console.log(`${userData.username} joined Quiz Queue.`);
+  socket.on('join_quiz_queue', async (userData) => {
+    const difficulty = userData.difficulty || 'medium';
+    console.log(`${userData.username} joined Quiz Queue (${difficulty}).`);
     if (quizQueue.find(p => p.uid === userData.uid)) return;
 
-    if (quizQueue.length > 0) {
-      const opponent = quizQueue.pop();
-      const roomId = `match_quiz_${Date.now()}`;
-      
-      socket.join(roomId);
-      const opponentSocket = io.sockets.sockets.get(opponent.socketId);
-      if (opponentSocket) opponentSocket.join(roomId);
+    let opponentIndex = -1;
+    for (let i = 0; i < quizQueue.length; i++) {
+      if (quizQueue[i].difficulty === difficulty && io.sockets.sockets.get(quizQueue[i].socketId)) {
+        opponentIndex = i;
+        break;
+      }
+    }
 
-      const questions = selectQuizQuestions(5);
+    if (opponentIndex > -1) {
+      const opponent = quizQueue.splice(opponentIndex, 1)[0];
+      const roomId = `match_quiz_${Date.now()}`;
+      socket.join(roomId);
+      io.sockets.sockets.get(opponent.socketId).join(roomId);
+      const questions = await selectQuizQuestions(5, difficulty);
       const gameState = {
         roomId,
         game: 'quiz',
-        players: [opponent, { ...userData, socketId: socket.id }],
-        questions, // Server sends questions to both
+        players: [opponent, { ...userData, socketId: socket.id, difficulty }],
+        questions,
         currentQuestion: 0,
         scores: { [opponent.uid]: 0, [userData.uid]: 0 },
-        answers: {}, // Track answers per round: { questionIndex: { uid: { answer, time } } }
+        answers: {},
         totalQuestions: questions.length,
+        difficulty
       };
       activeMatches[roomId] = gameState;
-
       io.to(roomId).emit('quiz_match_found', gameState);
-      broadcastQueueCounts();
     } else {
-      quizQueue.push({ ...userData, socketId: socket.id });
+      quizQueue.push({ ...userData, socketId: socket.id, difficulty });
       socket.emit('waiting_for_opponent');
-      broadcastQueueCounts();
     }
+    broadcastQueueCounts();
   });
 
   socket.on('leave_quiz_queue', () => {
@@ -685,39 +760,43 @@ io.on('connection', (socket) => {
   // REACTION BATTLE (Best of 5)
   // ==========================================
   socket.on('join_reaction_queue', (userData) => {
-    console.log(`${userData.username} joined Reaction Queue.`);
+    const difficulty = userData.difficulty || 'medium';
+    console.log(`${userData.username} joined Reaction Queue (${difficulty}).`);
     if (reactionQueue.find(p => p.uid === userData.uid)) return;
 
-    if (reactionQueue.length > 0) {
-      const opponent = reactionQueue.pop();
-      const roomId = `match_react_${Date.now()}`;
-      
-      socket.join(roomId);
-      const opponentSocket = io.sockets.sockets.get(opponent.socketId);
-      if (opponentSocket) opponentSocket.join(roomId);
+    let opponentIndex = -1;
+    for (let i = 0; i < reactionQueue.length; i++) {
+      if (reactionQueue[i].difficulty === difficulty && io.sockets.sockets.get(reactionQueue[i].socketId)) {
+        opponentIndex = i;
+        break;
+      }
+    }
 
+    if (opponentIndex > -1) {
+      const opponent = reactionQueue.splice(opponentIndex, 1)[0];
+      const roomId = `match_react_${Date.now()}`;
+      socket.join(roomId);
+      io.sockets.sockets.get(opponent.socketId).join(roomId);
       const gameState = {
         roomId,
         game: 'reaction',
-        players: [opponent, { ...userData, socketId: socket.id }],
+        players: [opponent, { ...userData, socketId: socket.id, difficulty }],
         currentRound: 0,
         totalRounds: 5,
-        roundResults: [], // [{ uid1: timeMs, uid2: timeMs }]
+        roundResults: [],
         roundWins: { [opponent.uid]: 0, [userData.uid]: 0 },
         currentRoundResponses: {},
+        difficulty
       };
       activeMatches[roomId] = gameState;
-
       io.to(roomId).emit('reaction_match_found', gameState);
-      broadcastQueueCounts();
-
       // Start first round after a brief delay
       setTimeout(() => startReactionRound(roomId), 2000);
     } else {
-      reactionQueue.push({ ...userData, socketId: socket.id });
+      reactionQueue.push({ ...userData, socketId: socket.id, difficulty });
       socket.emit('waiting_for_opponent');
-      broadcastQueueCounts();
     }
+    broadcastQueueCounts();
   });
 
   socket.on('leave_reaction_queue', () => {
@@ -805,7 +884,7 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('rematch_requested', { uid, game });
   });
 
-  socket.on('accept_rematch', ({ roomId, game, players }) => {
+  socket.on('accept_rematch', async ({ roomId, game, players }) => {
     // Both players are still in the room, start a new game
     if (game === 'memory') {
       const deck = generateMemoryDeck();
@@ -821,7 +900,7 @@ io.on('connection', (socket) => {
       activeMatches[roomId] = newState;
       io.to(roomId).emit('memory_match_found', newState);
     } else if (game === 'quiz') {
-      const questions = selectQuizQuestions(5);
+      const questions = await selectQuizQuestions(5);
       const newState = {
         roomId,
         game: 'quiz',
@@ -857,58 +936,134 @@ io.on('connection', (socket) => {
     broadcastQueueCounts();
   });
 
-  socket.on('disconnect', () => {
-    console.log('Socket disconnected:', socket.id);
+  socket.on('leave_quiz_queue', () => {
+    quizQueue = quizQueue.filter(p => p.socketId !== socket.id);
+    broadcastQueueCounts();
+  });
+
+  socket.on('leave_memory_queue', () => {
+    memoryQueue = memoryQueue.filter(p => p.socketId !== socket.id);
+    broadcastQueueCounts();
+  });
+
+  socket.on('leave_reaction_queue', () => {
+    reactionQueue = reactionQueue.filter(p => p.socketId !== socket.id);
+    broadcastQueueCounts();
+  });
+
+  socket.on('disconnect', async () => {
+    const uid = connectedUsers.get(socket.id);
+    console.log(`[PRESENCE] Socket disconnected: ${socket.id} (uid: ${uid || 'unknown'})`);
+    connectedUsers.delete(socket.id);
+    
+    // Check if this was the user's last active socket
+    if (uid) {
+      const remainingSockets = Array.from(connectedUsers.values()).filter(u => u === uid);
+      if (remainingSockets.length === 0) {
+        console.log(`[PRESENCE] User ${uid} has no more active sessions. Marking offline.`);
+        try {
+          await db.collection('users').doc(uid).update({ 
+            isOnline: false, 
+            lastSeen: admin.firestore.FieldValue.serverTimestamp() 
+          });
+        } catch (err) {
+          console.error(`[PRESENCE] Error marking user ${uid} offline:`, err.message);
+        }
+      }
+    }
+
     waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
     tapQueue = tapQueue.filter(p => p.socketId !== socket.id);
     memoryQueue = memoryQueue.filter(p => p.socketId !== socket.id);
     quizQueue = quizQueue.filter(p => p.socketId !== socket.id);
     reactionQueue = reactionQueue.filter(p => p.socketId !== socket.id);
     
-    // Trigger online count update
-    updateOnlineCount();
+    // Broadcast updated online count and queue counts
+    broadcastOnlineCount();
     broadcastQueueCounts();
   });
 
-  // Broadcast initial online count and queue counts
-  updateOnlineCount();
+  // Broadcast initial queue counts to the newly connected socket
   broadcastQueueCounts();
 });
 
-// Presence System: Calculate online count based on Firestore lastSeen
-async function updateOnlineCount() {
-  try {
-    let firestoreCount = 0;
-    
-    // Safety check for DB initialization
-    if (db) {
-      // A user is considered online if seen in the last 60 seconds
-      const oneMinuteAgo = new Date(Date.now() - 60000);
-      
-      const onlineSnap = await db.collection('users')
-        .where('lastSeen', '>', oneMinuteAgo)
-        .count()
-        .get();
-      
-      firestoreCount = onlineSnap.data().count;
-    }
-    
-    // HYBRID FALLBACK: 
-    // Use the higher of: Firestore 'lastSeen' count OR actual active Socket connections.
-    // This fixes the '0 online' issue if Firestore indexes/queries are failing.
-    const socketCount = io.engine.clientsCount || 0;
-    const finalCount = Math.max(firestoreCount, socketCount);
+// Presence System: Broadcast online count based on connected socket users
+// Uses the connectedUsers Map which is the ground truth — updated instantly on connect/disconnect.
+function broadcastOnlineCount() {
+  // Count unique UIDs (a user with 2 tabs open still counts as 1)
+  const uniqueUsers = new Set(connectedUsers.values()).size;
+  console.log(`[PRESENCE] Broadcasting online count: ${uniqueUsers}`);
+  io.emit('online_count', uniqueUsers);
+}
 
-    io.emit('online_count', finalCount);
-  } catch (error) {
-    console.error('[PRESENCE] Error updating online count:', error);
-    // CRITICAL FALLBACK: Always emit at least the raw socket count if logic fails
-    io.emit('online_count', io.engine.clientsCount || 0);
+// Periodic broadcast every 20 seconds as a keepalive
+setInterval(broadcastOnlineCount, 20000);
+
+// Presence System: Reset all online statuses on server start
+// This ensures that if the server crashed, active sessions are cleared from Firestore
+async function resetAllOnlineStatus() {
+  try {
+    const snapshot = await db.collection('users').where('isOnline', '==', true).get();
+    if (!snapshot.empty) {
+      console.log(`[PRESENCE] Resetting ${snapshot.size} online statuses on startup.`);
+      const batch = db.batch();
+      snapshot.forEach(doc => {
+        batch.update(doc.ref, { isOnline: false });
+      });
+      await batch.commit();
+    }
+  } catch (err) {
+    console.error('[PRESENCE] Startup reset error:', err.message);
+  }
+}
+resetAllOnlineStatus();
+
+// Cleanup stale 'isOnline' users in Firestore
+// This handles cases where the user didn't disconnect cleanly
+async function cleanupStaleUsers() {
+  try {
+    // A user is considered stale if they haven't been seen for more than 3 minutes (180,000ms)
+    // Heartbeat is sent every 30s, so this gives them 6 chances to stay online.
+    const staleThreshold = new Date(Date.now() - 180000);
+    
+    // Query 1: Users with lastSeen field that is too old
+    const staleWithField = await db.collection('users')
+      .where('isOnline', '==', true)
+      .where('lastSeen', '<', staleThreshold)
+      .get();
+
+    // Query 2: Users who are 'isOnline' but for some reason MISS the lastSeen field
+    // We can't query 'missing field' directly in Firestore easily, 
+    // but we can query isOnline: true and filter null/missing in memory for safe cleanup.
+    const allOnline = await db.collection('users')
+      .where('isOnline', '==', true)
+      .get();
+    
+    const batch = db.batch();
+    let cleanupCount = 0;
+
+    allOnline.forEach(doc => {
+      const data = doc.data();
+      const lastSeen = data.lastSeen?.toDate ? data.lastSeen.toDate() : (data.lastSeen ? new Date(data.lastSeen) : null);
+      
+      if (!lastSeen || lastSeen < staleThreshold) {
+        batch.update(doc.ref, { isOnline: false });
+        cleanupCount++;
+      }
+    });
+
+    if (cleanupCount > 0) {
+      console.log(`[PRESENCE] Cleaning up ${cleanupCount} stale/ghost online users.`);
+      await batch.commit();
+      broadcastOnlineCount();
+    }
+  } catch (err) {
+    console.error('[PRESENCE] Cleanup error:', err.message);
   }
 }
 
-// Periodic update every 20 seconds
-setInterval(updateOnlineCount, 20000);
+// Run cleanup every 45 seconds for high precision
+setInterval(cleanupStaleUsers, 45000);
 
 // Reaction Battle: Server-controlled round start (ensures fairness)
 function startReactionRound(roomId) {

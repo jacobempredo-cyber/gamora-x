@@ -1,11 +1,12 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import logo from '../assets/logo.png.png';
 
 export default function Navbar() {
   const { currentUser, userProfile, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     try {
@@ -18,6 +19,9 @@ export default function Navbar() {
 
   if (!currentUser) return null;
 
+  const isAdminPage = location.pathname === '/admin';
+  const isAdminUser = userProfile?.isAdmin || userProfile?.role === 'admin';
+
   return (
     <nav className="sticky top-0 z-50 w-full px-6 py-3 flex flex-wrap justify-between items-center border-b border-white/5 bg-[#0d0221]/80 backdrop-blur-xl shadow-[0_4px_30px_rgba(0,0,0,0.4)]">
       <div className="flex items-center gap-8">
@@ -25,26 +29,42 @@ export default function Navbar() {
           <img src={logo} alt="Gamora X" className="h-[70px] md:h-[90px] w-auto object-contain" />
         </Link>
         <div className="hidden md:flex gap-8">
-          <Link to="/games" className="relative group text-gray-300 hover:text-cyan-400 font-medium transition-colors py-1">
-            GAMES
-            <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-cyan-400 group-hover:w-full transition-all duration-300"></span>
-          </Link>
-          <Link to="/multiplayer" className="relative group text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400 font-bold transition-all py-1">
-            MULTIPLAYER
-            <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-purple-400 group-hover:w-full transition-all duration-300"></span>
-          </Link>
-          <Link to="/leaderboard" className="relative group text-gray-300 hover:text-purple-400 font-medium transition-colors py-1">
-            LEADERBOARD
-            <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-purple-400 group-hover:w-full transition-all duration-300"></span>
-          </Link>
-          <Link to="/social" className="relative group text-gray-300 hover:text-yellow-400 font-medium transition-colors py-1">
-            SOCIAL
-            <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-yellow-400 group-hover:w-full transition-all duration-300"></span>
-          </Link>
-          <Link to="/chat" className="relative group text-gray-300 hover:text-pink-400 font-medium transition-colors py-1">
-            GLOBAL CHAT
-            <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-pink-400 group-hover:w-full transition-all duration-300"></span>
-          </Link>
+          {!isAdminPage ? (
+            <>
+              <Link to="/games" className="relative group text-gray-300 hover:text-cyan-400 font-medium transition-colors py-1">
+                GAMES
+                <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-cyan-400 group-hover:w-full transition-all duration-300"></span>
+              </Link>
+              <Link to="/multiplayer" className="relative group text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400 font-bold transition-all py-1">
+                MULTIPLAYER
+                <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-purple-400 group-hover:w-full transition-all duration-300"></span>
+              </Link>
+              <Link to="/leaderboard" className="relative group text-gray-300 hover:text-purple-400 font-medium transition-colors py-1">
+                LEADERBOARD
+                <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-purple-400 group-hover:w-full transition-all duration-300"></span>
+              </Link>
+              <Link to="/social" className="relative group text-gray-300 hover:text-yellow-400 font-medium transition-colors py-1">
+                SOCIAL
+                <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-yellow-400 group-hover:w-full transition-all duration-300"></span>
+              </Link>
+              <Link to="/chat" className="relative group text-gray-300 hover:text-pink-400 font-medium transition-colors py-1">
+                GLOBAL CHAT
+                <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-pink-400 group-hover:w-full transition-all duration-300"></span>
+              </Link>
+              {isAdminUser && (
+                <Link to="/admin" className="relative group px-3 py-1 bg-red-500/10 border border-red-500/20 rounded text-red-500 hover:bg-red-500 hover:text-white font-black text-[10px] tracking-widest transition-all animate-pulse hover:animate-none">
+                  SYSTEM ADMIN
+                </Link>
+              )}
+            </>
+          ) : (
+            <Link to="/dashboard" className="relative group text-cyan-400 hover:text-white font-black text-xs tracking-widest transition-colors py-1 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              RETURN TO ARENA
+            </Link>
+          )}
         </div>
       </div>
 

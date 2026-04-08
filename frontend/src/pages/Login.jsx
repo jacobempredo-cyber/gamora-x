@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import logo from '../assets/logo.png.png';
 
 export default function Login() {
@@ -11,13 +13,30 @@ export default function Login() {
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
+  async function handleNavigation(user) {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userData = userDoc.data();
+      const isAdminFlag = userData?.isAdmin || userData?.role === 'admin';
+      
+      if (userDoc.exists() && isAdminFlag) {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard');
+      }
+    } catch (err) {
+      console.error("Navigation error:", err);
+      navigate('/dashboard');
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     try {
       setError('');
       setLoading(true);
-      await login(email, password);
-      navigate('/dashboard');
+      const userCredential = await login(email, password);
+      await handleNavigation(userCredential.user);
     } catch (err) {
       setError('Failed to sign in. Check your email and password.');
       console.error(err);
@@ -29,10 +48,10 @@ export default function Login() {
     try {
       setError('');
       setLoading(true);
-      await loginWithGoogle();
-      navigate('/dashboard');
+      const userCredential = await loginWithGoogle();
+      await handleNavigation(userCredential.user);
     } catch (err) {
-      setError('Failed to sign in with Google.');
+      setError('Failed to sign in with Google: ' + err.message);
       console.error(err);
     }
     setLoading(false);

@@ -24,6 +24,7 @@ import TicTacToe from './games/TicTacToe';
 import Quiz from './games/Quiz';
 import Reaction from './games/Reaction';
 import PartyMode from './games/PartyMode';
+import Snake from './games/Snake';
 
 import Navbar from './components/Navbar';
 import NotificationManager from './components/NotificationManager';
@@ -175,6 +176,15 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <PartyMode />
+                  </ProtectedRoute>
+                } 
+              />
+              
+              <Route 
+                path="/games/snake" 
+                element={
+                  <ProtectedRoute>
+                    <Snake />
                   </ProtectedRoute>
                 } 
               />

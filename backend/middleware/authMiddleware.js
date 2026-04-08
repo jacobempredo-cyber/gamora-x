@@ -2,6 +2,15 @@ const { auth, db } = require('../firebase/admin');
 
 // Middleware to verify Firebase ID token
 const verifyToken = async (req, res, next) => {
+  // Safety check for Firebase Auth
+  if (!auth) {
+    console.warn("[AUTH MIDDLEWARE] Firebase Auth not initialized. Request rejected.");
+    return res.status(503).json({ 
+      error: 'Backend Service Unavailable', 
+      details: 'Firebase Auth is not configured on the server. Please check .env' 
+    });
+  }
+
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -29,6 +38,15 @@ const verifyAdmin = async (req, res, next) => {
     // verifyToken must run BEFORE verifyAdmin
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized. User context missing.' });
+    }
+
+    // Safety check for Firestore
+    if (!db) {
+       console.warn("[ADMIN MIDDLEWARE] Firestore not initialized. Admin check failed.");
+       return res.status(503).json({ 
+         error: 'Backend Service Unavailable', 
+         details: 'Firestore is not configured on the server.' 
+       });
     }
 
     const userDoc = await db.collection('users').doc(req.user.uid).get();

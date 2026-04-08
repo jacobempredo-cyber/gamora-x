@@ -84,15 +84,22 @@ const GAMES = [
 ];
 
 export default function Landing() {
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile, profileLoading } = useAuth();
   const navigate = useNavigate();
   const statsRef = useRef(null);
   const [statsVisible, setStatsVisible] = useState(false);
 
-  // If user is already logged in, redirect to dashboard
+  // If user is already logged in, redirect to appropriate dashboard
   useEffect(() => {
-    if (currentUser) navigate('/dashboard', { replace: true });
-  }, [currentUser, navigate]);
+    if (!profileLoading && currentUser && userProfile) {
+      const isAdmin = userProfile.isAdmin || userProfile.role === 'admin';
+      if (isAdmin) {
+        navigate('/admin', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
+    }
+  }, [currentUser, userProfile, profileLoading, navigate]);
 
   // Trigger counters when stats section is visible
   useEffect(() => {

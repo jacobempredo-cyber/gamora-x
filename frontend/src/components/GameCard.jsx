@@ -1,7 +1,10 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
-export default function GameCard({ title, description, icon, route, color = 'cyan', isComingSoon = false, hasMultiplayer = false }) {
+export default function GameCard({ title, description, icon, route, color = 'cyan', isComingSoon = false, hasMultiplayer = false, image, id }) {
+  const { userProfile } = useAuth();
+  const navigate = useNavigate();
   
   const colorClasses = {
     cyan: 'border-cyan-500/30 hover:shadow-[0_0_25px_rgba(0,240,255,0.6)] hover:border-cyan-400 group-hover:text-cyan-400',
@@ -37,9 +40,26 @@ export default function GameCard({ title, description, icon, route, color = 'cya
         </div>
       )}
 
+      {(userProfile?.isAdmin || userProfile?.role === 'admin') && (
+        <button 
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            navigate('/admin');
+          }}
+          className="absolute top-3 left-3 z-[60] bg-red-600 hover:bg-red-500 text-white text-[8px] font-black px-2 py-1 rounded border border-red-400 shadow-lg flex items-center gap-1 transition-all hover:scale-105"
+        >
+          <span className="animate-pulse">●</span> ADMIN: EDIT
+        </button>
+      )}
+
       <div className="flex flex-col h-full z-10 relative">
-        <div className={`text-5xl mb-4 transition-transform duration-300 group-hover:scale-110 group-hover:text-${color}-400`}>
-          {icon}
+        <div className={`text-5xl mb-4 transition-transform duration-300 group-hover:scale-110 group-hover:text-${color}-400 flex items-center justify-center h-12 w-12 overflow-hidden rounded-lg`}>
+          {image ? (
+            <img src={image} className="w-full h-full object-cover" alt={title} />
+          ) : (
+            icon
+          )}
         </div>
         
         <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
@@ -68,8 +88,45 @@ export default function GameCard({ title, description, icon, route, color = 'cya
     );
   }
 
+  // Route Normalization: Make it foolproof
+  let rawRoute = (route || '/dashboard').trim();
+  let finalRoute = rawRoute;
+  let isExternal = false;
+
+  if (rawRoute.startsWith('http://') || rawRoute.startsWith('https://')) {
+    isExternal = true;
+  } else {
+    // Ultra-forgiving logic: If they accidentally pasted "Path: /games/snake" or extra text
+    if (finalRoute.toLowerCase().includes('snake')) {
+       finalRoute = '/games/snake';
+    } else {
+      // Ensure it starts with a slash
+      if (!finalRoute.startsWith('/')) {
+        finalRoute = '/' + finalRoute;
+      }
+      
+      // Ensure it's in the /games subdirectory unless it's explicitly going to dashboard, admin, etc.
+      if (!finalRoute.startsWith('/games') && 
+          !finalRoute.startsWith('/dashboard') && 
+          !finalRoute.startsWith('/admin') &&
+          !finalRoute.startsWith('/profile')) {
+            
+        // Convert e.g., "/newgame" to "/games/newgame"
+        finalRoute = '/games' + finalRoute;
+      }
+    }
+  }
+
+  if (isExternal) {
+    return (
+      <a href={finalRoute} target="_blank" rel="noopener noreferrer" className="block h-full group text-decoration-none">
+        {cardContent}
+      </a>
+    );
+  }
+
   return (
-    <Link to={route} className="block h-full group text-decoration-none">
+    <Link to={finalRoute} className="block h-full group text-decoration-none">
       {cardContent}
     </Link>
   );

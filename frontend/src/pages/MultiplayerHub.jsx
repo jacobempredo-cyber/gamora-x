@@ -8,7 +8,7 @@ const MULTIPLAYER_GAMES = [
     title: 'Tic Tac Toe',
     description: 'Classic 1v1 turn-based battle. Outsmart your opponent!',
     icon: '⚔️',
-    route: '/games/tic-tac-toe',
+    route: '/games/tic-tac-toe?mode=battle',
     color: 'purple',
     gradient: 'from-purple-500 to-pink-500',
     borderColor: 'border-purple-500/30',
@@ -21,7 +21,7 @@ const MULTIPLAYER_GAMES = [
     title: 'Tap Speed',
     description: 'Race to tap faster than your opponent in 10 seconds!',
     icon: '⚡',
-    route: '/games/tap-speed',
+    route: '/games/tap-speed?mode=battle',
     color: 'yellow',
     gradient: 'from-yellow-500 to-orange-500',
     borderColor: 'border-yellow-500/30',
@@ -34,7 +34,7 @@ const MULTIPLAYER_GAMES = [
     title: 'Memory Battle',
     description: 'Same board, race to find the most pairs before your opponent!',
     icon: '🧠',
-    route: '/games/memory',
+    route: '/games/memory?mode=battle',
     color: 'purple',
     gradient: 'from-violet-500 to-purple-600',
     borderColor: 'border-violet-500/30',
@@ -47,7 +47,7 @@ const MULTIPLAYER_GAMES = [
     title: 'Quiz Duel',
     description: 'Same questions, speed bonuses. Prove your knowledge!',
     icon: '🎯',
-    route: '/games/quiz',
+    route: '/games/quiz?mode=battle',
     color: 'cyan',
     gradient: 'from-cyan-500 to-blue-500',
     borderColor: 'border-cyan-500/30',
@@ -60,7 +60,7 @@ const MULTIPLAYER_GAMES = [
     title: 'Reaction Duel',
     description: 'Best of 5 rounds. Server-timed for fairness. Fastest wins!',
     icon: '🚦',
-    route: '/games/reaction',
+    route: '/games/reaction?mode=battle',
     color: 'pink',
     gradient: 'from-pink-500 to-rose-500',
     borderColor: 'border-pink-500/30',
@@ -73,6 +73,7 @@ const MULTIPLAYER_GAMES = [
 export default function MultiplayerHub() {
   const { socket, onlineCount } = useSocket();
   const [queueCounts, setQueueCounts] = useState({});
+  const [difficulty, setDifficulty] = useState('medium'); // 'easy', 'medium', 'hard'
 
   useEffect(() => {
     if (!socket) return;
@@ -84,6 +85,12 @@ export default function MultiplayerHub() {
 
   const totalInQueue = Object.values(queueCounts).reduce((sum, c) => sum + c, 0);
 
+  const DIFFICULTY_OPTIONS = [
+    { id: 'easy', label: 'EASY', color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20' },
+    { id: 'medium', label: 'MEDIUM', color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
+    { id: 'hard', label: 'HARD', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' }
+  ];
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
       {/* Header */}
@@ -91,7 +98,27 @@ export default function MultiplayerHub() {
         <h1 className="text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400 mb-3 tracking-tight">
           MULTIPLAYER ARENA
         </h1>
-        <p className="text-gray-400 text-xl mb-6">Challenge real players in real-time battles</p>
+        <p className="text-gray-400 text-xl mb-8">Challenge real players in real-time battles</p>
+
+        {/* Global Difficulty Selector */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em] mb-4">Select Arena Difficulty</div>
+          <div className="inline-flex p-1.5 bg-gray-900/80 backdrop-blur-md rounded-2xl border border-white/5 shadow-2xl">
+            {DIFFICULTY_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setDifficulty(opt.id)}
+                className={`px-8 py-3 rounded-xl font-black text-xs tracking-widest transition-all duration-300 ${
+                  difficulty === opt.id 
+                  ? `${opt.bg} ${opt.color} ${opt.border} border shadow-[0_0_20px_rgba(0,0,0,0.4)] scale-105` 
+                  : 'text-gray-600 hover:text-gray-400'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="flex justify-center gap-8">
           <div className="flex items-center gap-2 bg-gray-900/60 px-4 py-2 rounded-full border border-green-500/20">
@@ -133,8 +160,8 @@ export default function MultiplayerHub() {
           return (
             <Link
               key={game.id}
-              to={game.route}
-              className={`glass-card p-6 ${game.borderColor} hover:${game.glowColor} transition-all group relative overflow-hidden`}
+              to={`${game.route}&difficulty=${difficulty}`}
+              className={`glass-card p-6 ${game.borderColor} hover:${game.glowColor} transition-all group relative overflow-hidden block cursor-pointer active:scale-[0.98]`}
             >
               {/* Background glow effect */}
               <div className={`absolute -top-20 -right-20 w-40 h-40 rounded-full bg-gradient-to-br ${game.gradient} opacity-5 group-hover:opacity-15 transition-opacity blur-3xl`}></div>

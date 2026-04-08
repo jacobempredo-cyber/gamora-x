@@ -58,34 +58,45 @@ export function AuthProvider({ children }) {
 
   // Google Login
   const loginWithGoogle = useCallback(async () => {
-    const provider = new GoogleAuthProvider();
-    const userCredential = await signInWithPopup(auth, provider);
-    const user = userCredential.user;
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
 
-    const userRef = doc(db, 'users', user.uid);
-    const userSnap = await getDoc(userRef);
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
 
-    if (!userSnap.exists()) {
-      const profileData = {
-        uid: user.uid,
-        email: user.email,
-        username: user.displayName || user.email.split('@')[0],
-        avatar: user.photoURL || '',
-        score: 0,
-        level: 1,
-        xp: 0,
-        coins: 0,
-        createdAt: serverTimestamp(),
-        lastLogin: serverTimestamp(),
-        isOnline: true
-      };
-      await setDoc(userRef, profileData);
-      setUserProfile(profileData);
-    } else {
-      setUserProfile(userSnap.data());
+      if (!userSnap.exists()) {
+        const profileData = {
+          uid: user.uid,
+          email: user.email,
+          username: user.displayName || user.email.split('@')[0],
+          avatar: user.photoURL || '',
+          score: 0,
+          level: 1,
+          xp: 0,
+          coins: 0,
+          createdAt: serverTimestamp(),
+          lastLogin: serverTimestamp(),
+          isOnline: true
+        };
+        await setDoc(userRef, profileData);
+        setUserProfile(profileData);
+      } else {
+        setUserProfile(userSnap.data());
+      }
+
+      return userCredential;
+    } catch (error) {
+      console.error('[AUTH] Google Sign-In Error:', error.code, error.message);
+      if (error.code === 'auth/popup-blocked') {
+        throw new Error('Sign-in popup was blocked by your browser. Please allow popups for this site.');
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        throw new Error('Sign-in was cancelled or the popup was closed too early.');
+      } else {
+        throw error;
+      }
     }
-
-    return userCredential;
   }, []);
 
   const logout = useCallback(async () => {
@@ -116,6 +127,7 @@ export function AuthProvider({ children }) {
       if (unsubscribeProfile) unsubscribeProfile();
 
       if (user) {
+        setProfileLoading(true);
         const userRef = doc(db, 'users', user.uid);
         
         // High-Reliability Fetch: Try Backend API first, then fallback to direct Firestore
@@ -131,29 +143,32 @@ export function AuthProvider({ children }) {
               setUserProfile(data);
               console.log('[AUTH] Profile synced via Backend API');
               return true;
+            } else {
+              const errorData = await response.json().catch(() => ({}));
+              if (response.status === 503) {
+                 console.warn('[AUTH] Backend Service Unavailable (Missing Firebase Credentials). Falling back...');
+              } else {
+                 console.warn(`[AUTH] Backend fetch failed (${response.status}). Falling back to Firestore...`, errorData);
+              }
             }
           } catch (err) {
-            console.warn('[AUTH] Backend API fetch failed, trying direct Firestore...');
+            console.warn('[AUTH] Backend API fetch failed (Network or CORS), trying direct Firestore...');
           }
 
-          // Fallback to direct Firestore (even if "offline", it might return cached data)
+          // Fallback to direct Firestore
           try {
             const snap = await getDoc(userRef);
             if (snap.exists()) {
               setUserProfile(snap.data());
               return true;
             } else {
-              // Auto-creation for "real app" feel
+              // Create it if it really doesn't exist
               const newProfile = {
                 uid: user.uid,
                 username: user.email.split('@')[0],
                 email: user.email,
                 avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${user.uid}`,
-                level: 1,
-                xp: 0,
-                coins: 100,
-                isAdmin: false,
-                isOnline: true,
+                level: 1, xp: 0, coins: 100, isAdmin: false, isOnline: true,
                 createdAt: new Date().toISOString()
               };
               await setDoc(userRef, newProfile);
@@ -166,19 +181,20 @@ export function AuthProvider({ children }) {
           return false;
         };
 
-        // Create a promise wrapper with a timeout to prevent splash hang
+        // Profile Sync with Timeout
         const profileSyncWithTimeout = Promise.race([
           fetchProfile(),
           new Promise(resolve => setTimeout(() => {
-            console.warn('[AUTH] Profile sync timed out, continuing anyway...');
+            console.warn('[AUTH] Profile sync timed out, continuing with default...');
             resolve(false);
-          }, 3500)) // 3.5s timeout for initial splash
+          }, 3500))
         ]);
 
         await profileSyncWithTimeout;
         setProfileLoading(false);
         setAuthLoading(false);
-        // Real-time listener
+        
+        // Real-time listener keeps the profile updated whenever changes occur
         unsubscribeProfile = onSnapshot(userRef, (snapshot) => {
           if (snapshot.exists()) {
             setUserProfile(snapshot.data());

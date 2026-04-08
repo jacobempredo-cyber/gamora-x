@@ -20,6 +20,8 @@ export function SocketProvider({ children }) {
 
       newSocket.on('connect', () => {
         console.log('Socket.io connected successfully! ✅');
+        // Immediately register this user with the server so the online count is accurate
+        newSocket.emit('user_connected', currentUser.uid);
       });
 
       newSocket.on('online_count', (count) => {
