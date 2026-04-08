@@ -27,6 +27,8 @@ import PartyMode from './games/PartyMode';
 import Snake from './games/Snake';
 import TargetCombo from './games/TargetCombo';
 import ColorReflex from './games/ColorReflex';
+import PathEscape from './games/PathEscape';
+
 
 
 
@@ -210,6 +212,16 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
+
+              <Route 
+                path="/games/path-escape" 
+                element={
+                  <ProtectedRoute>
+                    <PathEscape />
+                  </ProtectedRoute>
+                } 
+              />
+
 
 
               
