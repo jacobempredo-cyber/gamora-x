@@ -31,6 +31,7 @@ import PathEscape from './games/PathEscape';
 import TapRhythm from './games/TapRhythm';
 import DecisionRush from './games/DecisionRush';
 import SurvivalClick from './games/SurvivalClick';
+import Prediction from './games/Prediction';
 
 
 
@@ -255,9 +256,14 @@ function App() {
                 } 
               />
 
-
-
-
+              <Route 
+                path="/games/prediction" 
+                element={
+                  <ProtectedRoute>
+                    <Prediction />
+                  </ProtectedRoute>
+                } 
+              />
 
 
               
