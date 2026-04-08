@@ -29,6 +29,8 @@ import TargetCombo from './games/TargetCombo';
 import ColorReflex from './games/ColorReflex';
 import PathEscape from './games/PathEscape';
 import TapRhythm from './games/TapRhythm';
+import DecisionRush from './games/DecisionRush';
+
 
 
 
@@ -232,6 +234,16 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
+
+              <Route 
+                path="/games/decision-rush" 
+                element={
+                  <ProtectedRoute>
+                    <DecisionRush />
+                  </ProtectedRoute>
+                } 
+              />
+
 
 
 
