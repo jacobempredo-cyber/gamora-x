@@ -117,18 +117,21 @@ export default function Reaction() {
   const giveMultiplayerRewards = async (isWin) => {
     try {
       const userRef = doc(db, 'users', currentUser.uid);
-      const baseXp = isWin ? 600 : 200;
-      const baseCoins = isWin ? 60 : 15;
+      const scoreGain = isWin ? 100 : 20;
+      const xpGain = isWin ? 50 : 10;
+      const coinsGain = isWin ? 25 : 5;
+
       await updateDoc(userRef, {
-        score: increment(isWin ? 1200 : 400),
-        xp: increment(baseXp),
-        coins: increment(baseCoins),
+        score: increment(scoreGain),
+        xp: increment(xpGain),
+        coins: increment(coinsGain),
       });
+
       const lbRef = doc(db, 'leaderboard', currentUser.uid);
       await setDoc(lbRef, {
         username: userProfile.username,
         avatar: userProfile.avatar || '',
-        score: increment(isWin ? 1200 : 400),
+        score: increment(scoreGain),
         updatedAt: new Date(),
       }, { merge: true });
       if (isWin) updateTaskProgress('win_battle');
@@ -136,6 +139,7 @@ export default function Reaction() {
       console.error(e);
     }
   };
+
 
   // SOLO LOGIC
   useEffect(() => {

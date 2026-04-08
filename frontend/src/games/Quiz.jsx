@@ -259,15 +259,17 @@ export default function Quiz() {
   };
 
   // Handlers: Battle
-  const joinQueue = () => {
+  const joinQueue = (difficulty = 'medium') => {
     if (!socket) return;
     setIsMatchmaking(true);
     socket.emit('join_quiz_queue', {
       uid: currentUser.uid,
       username: userProfile?.username || currentUser.email.split('@')[0],
       avatar: userProfile?.avatar || '',
+      difficulty: difficulty.toLowerCase()
     });
   };
+
 
   const cancelMatchmaking = () => {
     socket.emit('leave_quiz_queue');
@@ -294,8 +296,14 @@ export default function Quiz() {
   };
 
   const acceptRematch = () => {
-    socket.emit('accept_rematch', { roomId: matchData.roomId, game: 'quiz', players: matchData.players });
+    socket.emit('accept_rematch', { 
+      roomId: matchData.roomId, 
+      game: 'quiz', 
+      players: matchData.players,
+      difficulty: matchData.difficulty || 'medium'
+    });
   };
+
 
   const giveMultiplayerRewards = async (isWin) => {
     try {
@@ -416,9 +424,9 @@ export default function Quiz() {
                  <button onClick={() => setSelectedDifficulty('selecting')} className="px-10 py-5 bg-gray-800 border-2 border-gray-600 rounded-xl text-white font-bold text-xl hover:border-cyan-400 hover:bg-gray-700 transition-all w-64">
                     SOLO PRACTICE
                  </button>
-                 <button onClick={joinQueue} className="px-10 py-5 bg-cyan-500 text-gray-900 rounded-xl font-black text-xl hover:bg-cyan-400 transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] w-64">
+                  <button onClick={() => joinQueue(difficultyParam || 'medium')} className="px-10 py-5 bg-cyan-500 text-gray-900 rounded-xl font-black text-xl hover:bg-cyan-400 transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] w-64">
                     1v1 BATTLE
-                 </button>
+                  </button>
               </div>
             </div>
         )}

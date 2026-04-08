@@ -360,6 +360,14 @@ async function selectQuizQuestions(count = 5, difficulty = 'medium') {
     const snapshot = await db.collection('quizzes').where('difficulty', '==', difficulty.toLowerCase()).get();
     if (snapshot.empty) throw new Error(`No ${difficulty} quizzes found in database`);
     const questions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Fallback if no questions found in the selected difficulty
+    if (questions.length === 0) {
+      console.warn(`[QUIZ] No ${difficulty} questions found in Firestore, using fallback.`);
+      const shuffled = [...QUIZ_BATTLE_QUESTIONS].sort(() => 0.5 - Math.random());
+      return shuffled.slice(0, count);
+    }
+
     return questions.sort(() => 0.5 - Math.random()).slice(0, count);
   } catch (error) {
     console.error(`[QUIZ] Failed to fetch ${difficulty} questions from Firestore, using fallback:`, error.message);
@@ -367,6 +375,7 @@ async function selectQuizQuestions(count = 5, difficulty = 'medium') {
     return shuffled.slice(0, count);
   }
 }
+
 
 io.on('connection', (socket) => {
   console.log('Socket connected:', socket.id);
@@ -884,7 +893,8 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('rematch_requested', { uid, game });
   });
 
-  socket.on('accept_rematch', async ({ roomId, game, players }) => {
+  socket.on('accept_rematch', async ({ roomId, game, players, difficulty }) => {
+
     // Both players are still in the room, start a new game
     if (game === 'memory') {
       const deck = generateMemoryDeck();
@@ -900,7 +910,8 @@ io.on('connection', (socket) => {
       activeMatches[roomId] = newState;
       io.to(roomId).emit('memory_match_found', newState);
     } else if (game === 'quiz') {
-      const questions = await selectQuizQuestions(5);
+      const selectedDifficulty = difficulty || 'medium';
+      const questions = await selectQuizQuestions(5, selectedDifficulty);
       const newState = {
         roomId,
         game: 'quiz',
@@ -910,7 +921,10 @@ io.on('connection', (socket) => {
         scores: { [players[0].uid]: 0, [players[1].uid]: 0 },
         answers: {},
         totalQuestions: questions.length,
+        difficulty: selectedDifficulty
       };
+
+
       activeMatches[roomId] = newState;
       io.to(roomId).emit('quiz_match_found', newState);
     } else if (game === 'reaction') {

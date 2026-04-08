@@ -7,6 +7,9 @@ require('dotenv').config();
 // Alternatively, parse the JSON from env string:
 
 
+const path = require('path');
+const fs = require('fs');
+
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -18,13 +21,23 @@ try {
     });
     console.log('Firebase Admin initialized from ENV JSON');
   } else {
-    // Force project ID if default init is ambiguous in local dev
-    admin.initializeApp({
-      projectId: 'gamora-x' 
-    });
-    console.log('Firebase Admin initialized with projectId: gamora-x (Limited Credentials)');
+    // Check for local serviceAccountKey.json
+    const localKeyPath = path.join(__dirname, '..', 'serviceAccountKey.json');
+    if (fs.existsSync(localKeyPath)) {
+      const localKey = require(localKeyPath);
+      admin.initializeApp({
+        credential: admin.credential.cert(localKey)
+      });
+      console.log('Firebase Admin initialized from local serviceAccountKey.json');
+    } else {
+      admin.initializeApp({
+        projectId: 'gamora-x' 
+      });
+      console.log('Firebase Admin initialized with projectId: gamora-x (Limited Credentials)');
+    }
   }
 } catch (error) {
+
   if (!error.message.includes('already exists')) {
     console.error("🔥 FIREBASE ADMIN INIT ERROR:", error.message);
   }

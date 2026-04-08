@@ -104,23 +104,24 @@ export default function MemoryCard() {
   const giveMultiplayerRewards = async (isWin) => {
     try {
       const userRef = doc(db, 'users', currentUser.uid);
-      const baseScore = 200;
-      const earnedXp = isWin ? baseScore * 2 : baseScore;
-      const earnedCoins = isWin ? 40 : 10;
+      const scoreGain = isWin ? 100 : 20;
+      const xpGain = isWin ? 50 : 10;
+      const coinsGain = isWin ? 25 : 5;
 
       await updateDoc(userRef, {
-        score: increment(isWin ? baseScore * 2 : baseScore),
-        xp: increment(earnedXp),
-        coins: increment(earnedCoins),
+        score: increment(scoreGain),
+        xp: increment(xpGain),
+        coins: increment(coinsGain),
       });
 
       const lbRef = doc(db, 'leaderboard', currentUser.uid);
       await setDoc(lbRef, {
         username: userProfile.username,
         avatar: userProfile.avatar || '',
-        score: increment(isWin ? baseScore * 2 : baseScore),
+        score: increment(scoreGain),
         updatedAt: new Date(),
       }, { merge: true });
+
 
       if (isWin) updateTaskProgress('win_battle');
     } catch (e) {

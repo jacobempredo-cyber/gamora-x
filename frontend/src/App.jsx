@@ -25,6 +25,8 @@ import Quiz from './games/Quiz';
 import Reaction from './games/Reaction';
 import PartyMode from './games/PartyMode';
 import Snake from './games/Snake';
+import TargetCombo from './games/TargetCombo';
+
 
 import Navbar from './components/Navbar';
 import NotificationManager from './components/NotificationManager';
@@ -188,6 +190,16 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
+              
+              <Route 
+                path="/games/target-combo" 
+                element={
+                  <ProtectedRoute>
+                    <TargetCombo />
+                  </ProtectedRoute>
+                } 
+              />
+
               
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
