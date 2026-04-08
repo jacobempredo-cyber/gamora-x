@@ -7,10 +7,18 @@ export default function Admin() {
   const [users, setUsers] = useState([]);
   const [games, setGames] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
+  const [decisionQs, setDecisionQs] = useState([]);
   const [editingQuizId, setEditingQuizId] = useState(null);
-  const [activeTab, setActiveTab] = useState('users'); // 'users', 'games', 'quizzes'
+  const [activeTab, setActiveTab] = useState('users'); // 'users', 'games', 'quizzes', 'decision'
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalUsers: 0, onlineUsers: 0, totalCoins: 0 });
+
+  // Decision Rush Form State
+  const [drForm, setDrForm] = useState({
+    question: '',
+    answer: true,
+    difficulty: 'easy'
+  });
 
   // Quiz Form State
   const [quizForm, setQuizForm] = useState({
@@ -36,14 +44,54 @@ export default function Admin() {
   });
 
   useEffect(() => {
-    if (activeTab === 'users') {
-      fetchUsers();
-    } else if (activeTab === 'games') {
-      fetchGames();
-    } else {
-      fetchQuizzes();
-    }
+    if (activeTab === 'users') fetchUsers();
+    else if (activeTab === 'games') fetchGames();
+    else if (activeTab === 'quizzes') fetchQuizzes();
+    else if (activeTab === 'decision') fetchDecisionQs();
   }, [activeTab]);
+
+  const fetchDecisionQs = async () => {
+    setLoading(true);
+    try {
+      const snapshot = await getDocs(collection(db, 'decisionQuestions'));
+      const fetched = [];
+      snapshot.forEach(d => fetched.push({ id: d.id, ...d.data() }));
+      setDecisionQs(fetched.sort((a, b) => (a.difficulty || '').localeCompare(b.difficulty || '')));
+    } catch (err) {
+      toast.error('Failed to load Decision Rush questions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddDecisionQ = async (e) => {
+    e.preventDefault();
+    if (!drForm.question.trim()) { toast.error('Question cannot be empty'); return; }
+    try {
+      await addDoc(collection(db, 'decisionQuestions'), {
+        question: drForm.question.trim(),
+        answer: drForm.answer === true || drForm.answer === 'true',
+        difficulty: drForm.difficulty,
+        createdAt: serverTimestamp()
+      });
+      toast.success('Decision Rush question added! 🔥');
+      setDrForm({ question: '', answer: true, difficulty: 'easy' });
+      fetchDecisionQs();
+    } catch (err) {
+      toast.error('Failed to add question');
+    }
+  };
+
+  const deleteDecisionQ = async (id) => {
+    if (!window.confirm('Delete this question?')) return;
+    try {
+      await deleteDoc(doc(db, 'decisionQuestions', id));
+      toast.success('Question deleted');
+      fetchDecisionQs();
+    } catch (err) {
+      toast.error('Delete failed');
+    }
+  };
 
   const fetchQuizzes = async () => {
     setLoading(true);
@@ -324,24 +372,30 @@ export default function Admin() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1">
+        <div className="flex flex-wrap bg-gray-900 border border-gray-800 rounded-lg p-1 gap-1">
           <button 
             onClick={() => setActiveTab('users')}
-            className={`px-6 py-2 rounded-md font-bold transition-all ${activeTab === 'users' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-400 hover:text-white'}`}
+            className={`px-5 py-2 rounded-md font-bold transition-all ${activeTab === 'users' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-400 hover:text-white'}`}
           >
             Players
           </button>
           <button 
             onClick={() => setActiveTab('games')}
-            className={`px-6 py-2 rounded-md font-bold transition-all ${activeTab === 'games' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-400 hover:text-white'}`}
+            className={`px-5 py-2 rounded-md font-bold transition-all ${activeTab === 'games' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-400 hover:text-white'}`}
           >
             Games
           </button>
           <button 
             onClick={() => setActiveTab('quizzes')}
-            className={`px-6 py-2 rounded-md font-bold transition-all ${activeTab === 'quizzes' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-400 hover:text-white'}`}
+            className={`px-5 py-2 rounded-md font-bold transition-all ${activeTab === 'quizzes' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-400 hover:text-white'}`}
           >
-            Quizzes
+            Quiz Master
+          </button>
+          <button 
+            onClick={() => setActiveTab('decision')}
+            className={`px-5 py-2 rounded-md font-bold transition-all ${activeTab === 'decision' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-white'}`}
+          >
+            ⚡ Decision Rush
           </button>
         </div>
       </div>
@@ -581,7 +635,7 @@ export default function Admin() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'quizzes' ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           {/* Add Quiz Form */}
           <div className="glass-card p-8 border-gray-700">
@@ -751,7 +805,105 @@ export default function Admin() {
             </div>
           </div>
         </div>
-      )}
+      ) : activeTab === 'decision' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+          {/* Add Decision Rush Question Form */}
+          <div className="glass-card p-8 border-orange-500/20">
+            <h2 className="text-2xl font-bold text-white mb-2">⚡ Decision Rush</h2>
+            <p className="text-gray-500 text-xs uppercase tracking-widest mb-6">Add True / False questions</p>
+            <form onSubmit={handleAddDecisionQ} className="space-y-5">
+              <div>
+                <label className="block text-xs uppercase font-bold text-gray-500 mb-2">Statement / Question</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={drForm.question}
+                  onChange={e => setDrForm({ ...drForm, question: e.target.value })}
+                  placeholder="e.g. The sun is a star"
+                  className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white focus:border-orange-500 outline-none resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs uppercase font-bold text-gray-500 mb-2">Correct Answer</label>
+                <select
+                  value={String(drForm.answer)}
+                  onChange={e => setDrForm({ ...drForm, answer: e.target.value === 'true' })}
+                  className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white focus:border-orange-500 outline-none"
+                >
+                  <option value="true">✅ TRUE</option>
+                  <option value="false">❌ FALSE</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs uppercase font-bold text-gray-500 mb-2">Difficulty</label>
+                <select
+                  value={drForm.difficulty}
+                  onChange={e => setDrForm({ ...drForm, difficulty: e.target.value })}
+                  className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white focus:border-orange-500 outline-none"
+                >
+                  <option value="easy">🟢 Easy</option>
+                  <option value="medium">🟡 Medium</option>
+                  <option value="hard">🔴 Hard</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-black py-4 rounded-lg shadow-lg shadow-orange-500/30 transition-all uppercase tracking-widest"
+              >
+                Add Question 🔥
+              </button>
+            </form>
+          </div>
+
+          {/* Question List */}
+          <div className="lg:col-span-2">
+            <div className="glass-card border-gray-700 overflow-hidden">
+              <div className="p-6 border-b border-gray-700 flex justify-between items-center bg-gray-900/50">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Decision Rush Questions</h2>
+                  <p className="text-xs text-gray-500 mt-1">{decisionQs.length} question{decisionQs.length !== 1 ? 's' : ''} in database</p>
+                </div>
+                <button onClick={fetchDecisionQs} className="px-4 py-2 border border-gray-600 rounded bg-gray-800 text-gray-300 text-xs font-bold hover:text-white">RELOAD</button>
+              </div>
+              <div className="p-6">
+                {loading ? (
+                  <div className="flex justify-center py-20"><div className="w-8 h-8 rounded-full border-2 border-orange-500 animate-spin border-t-transparent"></div></div>
+                ) : decisionQs.length === 0 ? (
+                  <div className="text-center py-20">
+                    <div className="text-4xl mb-4 opacity-30">⚡</div>
+                    <p className="text-gray-500 font-bold uppercase tracking-widest text-sm">No questions yet.</p>
+                    <p className="text-gray-600 text-xs mt-2">Add your first question using the form on the left.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                    {decisionQs.map(q => (
+                      <div key={q.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between gap-4 group">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${
+                              q.difficulty === 'easy' ? 'bg-green-500/20 text-green-400' :
+                              q.difficulty === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                              'bg-red-500/20 text-red-400'
+                            }`}>{q.difficulty}</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                              q.answer ? 'bg-green-500/10 text-green-500 border border-green-500/30' : 'bg-red-500/10 text-red-500 border border-red-500/30'
+                            }`}>{q.answer ? '✅ TRUE' : '❌ FALSE'}</span>
+                          </div>
+                          <p className="text-white font-bold text-sm leading-snug truncate">{q.question}</p>
+                        </div>
+                        <button
+                          onClick={() => deleteDecisionQ(q.id)}
+                          className="flex-shrink-0 w-8 h-8 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"
+                        >🗑️</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
