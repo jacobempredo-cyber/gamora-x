@@ -26,6 +26,8 @@ import Reaction from './games/Reaction';
 import PartyMode from './games/PartyMode';
 import Snake from './games/Snake';
 import TargetCombo from './games/TargetCombo';
+import ColorReflex from './games/ColorReflex';
+
 
 
 import Navbar from './components/Navbar';
@@ -199,6 +201,16 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
+
+              <Route 
+                path="/games/color-reflex" 
+                element={
+                  <ProtectedRoute>
+                    <ColorReflex />
+                  </ProtectedRoute>
+                } 
+              />
+
 
               
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
