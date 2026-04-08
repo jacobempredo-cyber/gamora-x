@@ -30,6 +30,8 @@ import ColorReflex from './games/ColorReflex';
 import PathEscape from './games/PathEscape';
 import TapRhythm from './games/TapRhythm';
 import DecisionRush from './games/DecisionRush';
+import SurvivalClick from './games/SurvivalClick';
+
 
 
 
@@ -243,6 +245,16 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
+
+              <Route 
+                path="/games/survival-click" 
+                element={
+                  <ProtectedRoute>
+                    <SurvivalClick />
+                  </ProtectedRoute>
+                } 
+              />
+
 
 
 
