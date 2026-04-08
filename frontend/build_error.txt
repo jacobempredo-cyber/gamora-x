@@ -1,0 +1,46 @@
+
+> frontend@0.0.0 build
+> vite build
+
+[36mvite v8.0.3 [32mbuilding client environment for production...[36m[39m
+[2Ktransforming...✓ 419 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                               0.45 kB │ gzip:   0.29 kB
+dist/assets/gamora_x_emblem-BnzCExnf.png    695.05 kB
+dist/assets/logo.png-zM1jsAea.png         1,139.21 kB
+dist/assets/background-Qpz5UNuY.png       1,431.18 kB
+dist/assets/index-D6QUp2wQ.css              347.17 kB │ gzip:  46.58 kB
+dist/assets/index-Ci-Cn7mA.js               955.12 kB │ gzip: 268.61 kB
+
+[33m[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[31m✗[39m Build failed in 2.17s
+[31merror during build:
+[31mBuild failed with 1 error:
+
+Error: [vite]: Rolldown failed to resolve import "framer-motion" from "C:/Users/Lenovo i5 8th Gen/Documents/Gamora x/frontend/src/games/Prediction.jsx".
+This is most likely unintended because it can break your application at runtime.
+If you do want to externalize this module explicitly add it to
+`build.rollupOptions.external`
+    at viteLog (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/chunks/node.js:32942:57)
+    at file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/chunks/node.js:32978:71
+    at onwarn (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/@vitejs/plugin-react/dist/index.js:40:7)
+    at file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/chunks/node.js:32978:28
+    at onRollupLog (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/chunks/node.js:32973:63)
+    at onLog (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/chunks/node.js:32743:4)
+    at file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/rolldown/dist/shared/rolldown-build-CPrIX9V6.mjs:49:26
+    at logger (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/rolldown/dist/shared/rolldown-build-CPrIX9V6.mjs:40:3)
+    at onLog (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/rolldown/dist/shared/bindingify-input-options-e7ze4hPR.mjs:1972:32)[31m
+    at aggregateBindingErrorsIntoJsError (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/rolldown/dist/shared/error-BLhcSyeg.mjs:48:18)
+    at unwrapBindingResult (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/rolldown/dist/shared/error-BLhcSyeg.mjs:18:128)
+    at #build (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/rolldown/dist/shared/rolldown-build-CPrIX9V6.mjs:3313:34)
+    at async buildEnvironment (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/chunks/node.js:32849:64)
+    at async Object.build (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/chunks/node.js:33271:19)
+    at async Object.buildApp (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/chunks/node.js:33268:153)
+    at async CAC.<anonymous> (file:///C:/Users/Lenovo%20i5%208th%20Gen/Documents/Gamora%20x/frontend/node_modules/vite/dist/node/cli.js:778:3) {
+  errors: [Getter/Setter]
+}[39m
