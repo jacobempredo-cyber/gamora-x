@@ -28,6 +28,8 @@ import Snake from './games/Snake';
 import TargetCombo from './games/TargetCombo';
 import ColorReflex from './games/ColorReflex';
 import PathEscape from './games/PathEscape';
+import TapRhythm from './games/TapRhythm';
+
 
 
 
@@ -221,6 +223,16 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
+
+              <Route 
+                path="/games/tap-rhythm" 
+                element={
+                  <ProtectedRoute>
+                    <TapRhythm />
+                  </ProtectedRoute>
+                } 
+              />
+
 
 
 
